@@ -1,3 +1,10 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+mkdir -p src policies artifacts logs
+
+# Replace src/index.ts with v0.5 scoring + exec summary (keeps v0.4 tolerant ingestion)
+cat > src/index.ts <<'TS'
 import { existsSync, mkdirSync, readFileSync, writeFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
@@ -296,3 +303,6 @@ function main() {
 }
 
 main();
+TS
+
+npm run build

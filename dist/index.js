@@ -7,12 +7,9 @@ function readText(path) { return readFileSync(path, "utf-8"); }
 function listInputsDir() {
     if (!existsSync("inputs"))
         return [];
-    return readdirSync("inputs")
-        .filter(f => f.endsWith(".csv"))
-        .map(f => join("inputs", f));
+    return readdirSync("inputs").filter(f => f.endsWith(".csv")).map(f => join("inputs", f));
 }
 function parseYamlList(line) {
-    // expects: [a, b, c]
     const arr = line.split(":").slice(1).join(":").trim();
     const inside = arr.replace(/^\[/, "").replace(/\]$/, "");
     if (!inside.trim())
@@ -31,13 +28,7 @@ function loadChecks(yamlPath) {
         if (t.startsWith("- id:")) {
             if (cur)
                 checks.push(cur);
-            cur = {
-                id: t.split(":")[1].trim(),
-                required_fields: [],
-                optional_fields: [],
-                evidence_fields: [],
-                rule: null
-            };
+            cur = { id: t.split(":")[1].trim(), required_fields: [], optional_fields: [], evidence_fields: [], rule: null };
             inRule = false;
             continue;
         }
@@ -80,14 +71,13 @@ function parseCsv(path) {
     for (let i = 1; i < lines.length; i++) {
         const parts = lines[i].split(",");
         const row = {};
-        for (let j = 0; j < headers.length; j++) {
+        for (let j = 0; j < headers.length; j++)
             row[headers[j]] = (parts[j] ?? "").trim();
-        }
         rows.push(row);
     }
     return { headers, rows };
 }
-function hasAllFields(headers, required) {
+function missingFields(headers, required) {
     const set = new Set(headers);
     return required.filter(f => !set.has(f));
 }
@@ -95,19 +85,85 @@ function evalRule(rule, row) {
     const v = (row[rule.field] ?? "").toLowerCase();
     if (rule.type === "equals")
         return v === rule.value.toLowerCase();
-    if (rule.type === "contains_any") {
-        const values = rule.values.map(x => x.toLowerCase());
-        return values.some(x => v.includes(x));
-    }
+    if (rule.type === "contains_any")
+        return rule.values.map(x => x.toLowerCase()).some(x => v.includes(x));
     return false;
 }
 function pickEvidence(fields, row) {
     const out = {};
-    for (const f of fields) {
+    for (const f of fields)
         if (row[f] !== undefined && row[f] !== "")
             out[f] = row[f];
-    }
     return out;
+}
+function maxSeverity(a, b) {
+    const rank = { low: 1, medium: 2, high: 3 };
+    return rank[a] >= rank[b] ? a : b;
+}
+function computeRisk(findings) {
+    // We intentionally down-weight data_quality. It's a governance signal, not direct exposure.
+    const weights = { high: 30, medium: 12, low: 3 };
+    let high = 0, medium = 0, low = 0;
+    for (const f of findings) {
+        if (f.domain === "data_quality") {
+            low += 1;
+            continue;
+        }
+        if (f.severity === "high")
+            high++;
+        else if (f.severity === "medium")
+            medium++;
+        else
+            low++;
+    }
+    const raw = high * weights.high + medium * weights.medium + low * weights.low;
+    // Saturating score: approaches 100 as raw grows.
+    const score = Math.max(0, Math.min(100, Math.round(100 * (1 - Math.exp(-raw / 60)))));
+    let level = "low";
+    if (score >= 80)
+        level = "critical";
+    else if (score >= 55)
+        level = "high";
+    else if (score >= 25)
+        level = "moderate";
+    // top domains (excluding data_quality)
+    const domainMap = new Map();
+    for (const f of findings) {
+        if (f.domain === "data_quality")
+            continue;
+        const cur = domainMap.get(f.domain) ?? { count: 0, max: "low" };
+        cur.count += 1;
+        cur.max = maxSeverity(cur.max, f.severity);
+        domainMap.set(f.domain, cur);
+    }
+    const top_domains = [...domainMap.entries()]
+        .map(([domain, v]) => ({ domain, count: v.count, maxSeverity: v.max }))
+        .sort((a, b) => b.count - a.count)
+        .slice(0, 5);
+    return {
+        score,
+        level,
+        weights,
+        counts: { high, medium, low },
+        top_domains
+    };
+}
+function executiveNextSteps(risk, findings) {
+    const steps = [];
+    if (risk.level === "critical" || risk.level === "high") {
+        steps.push("Initiate same-day human review of HIGH findings; preserve evidence artifacts for audit.");
+        steps.push("Confirm whether any finding indicates active compromise or policy breach; if yes, follow incident response playbook.");
+    }
+    else if (risk.level === "moderate") {
+        steps.push("Review MEDIUM findings within 72 hours and confirm corrective actions.");
+    }
+    else {
+        steps.push("No urgent action. Continue monitoring and validate data coverage.");
+    }
+    const dq = findings.filter(f => f.domain === "data_quality");
+    if (dq.length > 0)
+        steps.push("Address data gaps flagged under data_quality to improve assessment accuracy.");
+    return steps;
 }
 function main() {
     const runId = `ago1_${Date.now()}`;
@@ -118,7 +174,6 @@ function main() {
     const autoInputs = argvInputs.length ? argvInputs : listInputsDir();
     const findings = [];
     const checks = existsSync("policies/checks.yaml") ? loadChecks("policies/checks.yaml") : [];
-    // Load each input once
     const cache = {};
     for (const inp of autoInputs) {
         try {
@@ -128,14 +183,13 @@ function main() {
             findings.push({ severity: "high", domain: "ingestion", summary: `Unreadable input: ${inp}` });
         }
     }
-    // Evaluate checks
     for (const chk of checks) {
         const inpPath = join("inputs", chk.input);
         if (!existsSync(inpPath))
             continue;
         const parsed = cache[inpPath] ?? parseCsv(inpPath);
         cache[inpPath] = parsed;
-        const missing = hasAllFields(parsed.headers, chk.required_fields);
+        const missing = missingFields(parsed.headers, chk.required_fields);
         if (missing.length > 0) {
             findings.push({
                 severity: "low",
@@ -159,34 +213,50 @@ function main() {
     if (autoInputs.length === 0) {
         findings.push({ severity: "medium", domain: "ingestion", summary: "No inputs provided and inputs/ is empty." });
     }
-    const payload = { runId, timestamp, inputs: autoInputs, findings };
+    const risk = computeRisk(findings);
+    const payload = { runId, timestamp, inputs: autoInputs, findings, risk };
     const jsonOut = join("artifacts", `${runId}.json`);
     writeFileSync(jsonOut, JSON.stringify(payload, null, 2), "utf-8");
     const mdOut = join("artifacts", `${runId}.md`);
-    const mdLines = [];
-    mdLines.push(`# AGO-1 Report`);
-    mdLines.push(``);
-    mdLines.push(`Run ID: \`${runId}\``);
-    mdLines.push(`Timestamp: \`${timestamp}\``);
-    mdLines.push(``);
-    mdLines.push(`## Findings (${findings.length})`);
+    const md = [];
+    md.push(`# AGO-1 Report`);
+    md.push(``);
+    md.push(`Run ID: \`${runId}\``);
+    md.push(`Timestamp: \`${timestamp}\``);
+    md.push(``);
+    md.push(`## Executive Summary`);
+    md.push(`- Risk Score: **${risk.score}/100** (**${risk.level.toUpperCase()}**)`);
+    md.push(`- Findings: HIGH=${risk.counts.high}, MEDIUM=${risk.counts.medium}, LOW=${risk.counts.low} (data_quality counted as LOW)`);
+    if (risk.top_domains.length) {
+        md.push(`- Top Domains: ${risk.top_domains.map(d => `${d.domain}(${d.count}, max=${d.maxSeverity})`).join(", ")}`);
+    }
+    else {
+        md.push(`- Top Domains: None`);
+    }
+    md.push(``);
+    md.push(`### Recommended Next Steps`);
+    for (const s of executiveNextSteps(risk, findings))
+        md.push(`- ${s}`);
+    md.push(``);
+    md.push(`## Findings (${findings.length})`);
     if (findings.length === 0)
-        mdLines.push(`- None`);
+        md.push(`- None`);
     for (const f of findings) {
         const ev = f.evidence ? Object.entries(f.evidence).map(([k, v]) => `${k}=${v}`).join(", ") : "";
         const dq = f.data_quality ? ` missing=${f.data_quality.missing_required_fields.join("|")} input=${f.data_quality.input}` : "";
-        mdLines.push(`- **${f.severity.toUpperCase()}** [${f.domain}] ${f.summary}${ev ? ` — _${ev}_` : ""}${dq ? ` — _${dq}_` : ""}`);
+        md.push(`- **${f.severity.toUpperCase()}** [${f.domain}] ${f.summary}${ev ? ` — _${ev}_` : ""}${dq ? ` — _${dq}_` : ""}`);
     }
-    mdLines.push(``);
-    mdLines.push(`## Inputs`);
+    md.push(``);
+    md.push(`## Inputs`);
     if (autoInputs.length === 0)
-        mdLines.push(`- None`);
+        md.push(`- None`);
     for (const i of autoInputs)
-        mdLines.push(`- \`${i}\``);
-    writeFileSync(mdOut, mdLines.join("\n"), "utf-8");
-    writeFileSync(join("logs", `${runId}.log`), `AGO-1 ${runId} completed with ${findings.length} findings\n`, "utf-8");
+        md.push(`- \`${i}\``);
+    writeFileSync(mdOut, md.join("\n"), "utf-8");
+    writeFileSync(join("logs", `${runId}.log`), `AGO-1 ${runId} completed with ${findings.length} findings; risk=${risk.score}/${risk.level}\n`, "utf-8");
     console.log(`AGO-1 complete: ${runId}`);
     console.log(`Artifacts: ${jsonOut}, ${mdOut}`);
+    console.log(`Risk: ${risk.score}/100 (${risk.level})`);
     console.log(`Findings: ${findings.length}`);
 }
 main();
