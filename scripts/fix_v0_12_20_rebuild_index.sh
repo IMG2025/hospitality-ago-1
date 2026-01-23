@@ -1,17 +1,27 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+echo "Fix v0.12.20: rebuild src/index.ts orchestrator from clean spec"
+
+node <<'NODE'
 import fs from "fs";
+
+const path = "src/index.ts";
+
+const rebuilt = `import fs from "fs";
 import path from "path";
 import type { Finding, DomainContext } from "./shared/types.js";
 import { DOMAIN_REGISTRY } from "./domains/index.js";
 
-type CsvTable = { headers: string[]; rows: Record<string, string>[] };
+type CsvTable = { headers: string[]; rows: Record<string,string>[] };
 
 function parseCsv(p: string): CsvTable {
-  const raw = fs.readFileSync(p, "utf8").trim().split(/\r?\n/);
+  const raw = fs.readFileSync(p, "utf8").trim().split(/\\r?\\n/);
   const headers = raw[0].split(",");
-  const rows = raw.slice(1).map((l) => {
+  const rows = raw.slice(1).map(l => {
     const cols = l.split(",");
-    const r: Record<string, string> = {};
-    headers.forEach((h, i) => (r[h] = cols[i] ?? ""));
+    const r: Record<string,string> = {};
+    headers.forEach((h,i) => r[h] = cols[i] ?? "");
     return r;
   });
   return { headers, rows };
@@ -32,23 +42,13 @@ function loadInputs(): Record<string, CsvTable> {
 
 function run(): Finding[] {
   const cache = loadInputs();
-
-  // Align to DomainContext contract from shared types
-  const ctx: DomainContext = ({ inputs: cache }) as any;
-
+  const ctx: DomainContext = { cache };
   const findings: Finding[] = [];
 
   for (const [name, domain] of Object.entries(DOMAIN_REGISTRY)) {
     try {
-      const out = domain.evaluate(ctx) as any;
-
-      // DomainResult compatibility: prefer out.findings, fallback to array
-      const produced =
-        Array.isArray(out) ? out :
-        Array.isArray(out?.findings) ? out.findings :
-        [];
-
-      findings.push(...produced);
+      const out = domain.evaluate(ctx);
+      if (Array.isArray(out)) findings.push(...out);
     } catch (e) {
       findings.push({
         severity: "high",
@@ -64,5 +64,14 @@ function run(): Finding[] {
 
 const findings = run();
 for (const f of findings) {
-  console.log(`[${String(f.severity).toUpperCase()}] [${f.domain}] ${f.summary}`);
+  console.log(
+    \`[\${f.severity.toUpperCase()}] [\${f.domain}] \${f.summary}\`
+  );
 }
+`;
+
+fs.writeFileSync(path, rebuilt, "utf8");
+console.log("src/index.ts rebuilt cleanly.");
+NODE
+
+npm run build
