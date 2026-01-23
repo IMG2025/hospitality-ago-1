@@ -79,6 +79,25 @@ function loadLossPolicy(path) {
     }
     return defaults;
 }
+function loadMaintPolicy(path) {
+    const d = { stale_days_threshold: 7, stale_high_priority_days: 3, repeat_window_days: 30, repeat_count_threshold: 2, top_n_vendors: 5 };
+    if (!existsSync(path))
+        return d;
+    const raw = readText(path).split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+    for (const l of raw) {
+        if (l.startsWith("stale_days_threshold:"))
+            d.stale_days_threshold = Number(l.split(":")[1].trim()) || d.stale_days_threshold;
+        if (l.startsWith("stale_high_priority_days:"))
+            d.stale_high_priority_days = Number(l.split(":")[1].trim()) || d.stale_high_priority_days;
+        if (l.startsWith("repeat_window_days:"))
+            d.repeat_window_days = Number(l.split(":")[1].trim()) || d.repeat_window_days;
+        if (l.startsWith("repeat_count_threshold:"))
+            d.repeat_count_threshold = Number(l.split(":")[1].trim()) || d.repeat_count_threshold;
+        if (l.startsWith("top_n_vendors:"))
+            d.top_n_vendors = Number(l.split(":")[1].trim()) || d.top_n_vendors;
+    }
+    return d;
+}
 // --- CSV utilities ---
 function parseCsv(path) {
     const text = readText(path);
@@ -121,11 +140,23 @@ function toMillis(ts) {
     const d = new Date(ts);
     return isNaN(d.getTime()) ? null : d.getTime();
 }
+function parseDateOnly(x) {
+    if (!x)
+        return null;
+    const d = new Date(x + "T00:00:00Z");
+    return isNaN(d.getTime()) ? null : d.getTime();
+}
+function parseNumber(x) {
+    if (!x)
+        return null;
+    const v = Number(String(x).replace(/[^0-9.\-]/g, ""));
+    return Number.isFinite(v) ? v : null;
+}
 function maxSeverity(a, b) {
     const rank = { low: 1, medium: 2, high: 3 };
     return rank[a] >= rank[b] ? a : b;
 }
-// --- Risk scoring (from v0.5) ---
+// --- Risk scoring ---
 function computeRisk(findings) {
     const weights = { high: 30, medium: 12, low: 3 };
     let high = 0, medium = 0, low = 0;
@@ -165,7 +196,7 @@ function computeRisk(findings) {
         .slice(0, 5);
     return { score, level, weights, counts: { high, medium, low }, top_domains };
 }
-// --- Email recommendations & correlation (from v0.6) ---
+// --- Recommendations ---
 function emailRecommendations(sev) {
     if (sev === "high")
         return [
@@ -182,7 +213,6 @@ function emailRecommendations(sev) {
         ];
     return ["No immediate action required.", "Continue monitoring email security events."];
 }
-// --- Loss prevention recommendations ---
 function lossRecommendations(sev) {
     if (sev === "high")
         return [
@@ -198,19 +228,250 @@ function lossRecommendations(sev) {
         ];
     return ["Monitor variance trends and confirm data coverage."];
 }
-// --- Loss prevention engine ---
-function parseNumber(x) {
-    if (!x)
-        return null;
-    const v = Number(String(x).replace(/[^0-9.\-]/g, ""));
-    return Number.isFinite(v) ? v : null;
+function maintRecommendations(sev) {
+    if (sev === "high")
+        return [
+            "Escalate to facilities leadership; validate vendor dispatch and parts availability.",
+            "If customer-impacting asset, implement temporary mitigation until repair completed.",
+            "Preserve ticket evidence and closure notes for recurring failure analysis."
+        ];
+    if (sev === "medium")
+        return [
+            "Review stale tickets and confirm assignment/ETA.",
+            "Validate whether the asset is impacting service levels.",
+            "Ensure closure notes capture root cause and corrective action."
+        ];
+    return ["Monitor ticket aging trends and confirm data coverage."];
 }
-function parseDateOnly(x) {
-    if (!x)
-        return null;
-    // Treat YYYY-MM-DD as UTC midnight
-    const d = new Date(x + "T00:00:00Z");
-    return isNaN(d.getTime()) ? null : d.getTime();
+function isHighPriority(p) {
+    const x = (p || "").toLowerCase();
+    return ["high", "urgent", "p1", "1", "critical"].includes(x);
+}
+// --- Loss prevention engine (v0.7) ---
+function lossEngine(findings, cache, lossPolicy) {
+    if (!existsSync("inputs/inventory_variance.csv"))
+        return;
+    const parsed = cache["inputs/inventory_variance.csv"] ?? parseCsv("inputs/inventory_variance.csv");
+    cache["inputs/inventory_variance.csv"] = parsed;
+    const req = ["business_date", "location_id", "sku", "variance_value"];
+    const miss = missingFields(parsed.headers, req);
+    if (miss.length > 0) {
+        findings.push({
+            severity: "low",
+            domain: "data_quality",
+            summary: `Missing required fields for loss prevention evaluation (skipped)`,
+            data_quality: { missing_required_fields: miss, input: "inventory_variance.csv", check_id: "loss_prevention_engine" }
+        });
+        return;
+    }
+    const nowMs = Date.now();
+    const windowMs = lossPolicy.repeat_window_days * 24 * 60 * 60 * 1000;
+    const rows = [];
+    for (const r of parsed.rows) {
+        const d = parseDateOnly(r["business_date"]);
+        const v = parseNumber(r["variance_value"]);
+        if (d === null || v === null)
+            continue;
+        rows.push({
+            dMs: d,
+            business_date: r["business_date"] ?? "",
+            location_id: r["location_id"] ?? "",
+            sku: r["sku"] ?? "",
+            variance_value: v,
+            variance_qty: r["variance_qty"],
+            notes: r["notes"]
+        });
+    }
+    const spikes = rows.filter(r => r.variance_value >= lossPolicy.spike_threshold_value);
+    for (const s of spikes) {
+        findings.push({
+            severity: "medium",
+            domain: "loss_prevention",
+            summary: `Inventory variance spike detected (>= $${lossPolicy.spike_threshold_value})`,
+            evidence: {
+                business_date: s.business_date,
+                location_id: s.location_id,
+                sku: s.sku,
+                variance_value: String(s.variance_value),
+                variance_qty: s.variance_qty ?? "",
+                notes: s.notes ?? ""
+            },
+            recommendation: lossRecommendations("medium")
+        });
+    }
+    const recentSpikes = spikes.filter(r => (nowMs - r.dMs) <= windowMs);
+    const keyCounts = new Map();
+    for (const r of recentSpikes) {
+        const key = `${r.location_id}::${r.sku}`;
+        const cur = keyCounts.get(key) ?? { count: 0, totalValue: 0 };
+        cur.count += 1;
+        cur.totalValue += r.variance_value;
+        keyCounts.set(key, cur);
+    }
+    for (const [key, v] of keyCounts.entries()) {
+        if (v.count >= lossPolicy.repeat_count_threshold) {
+            const [location_id, sku] = key.split("::");
+            findings.push({
+                severity: "high",
+                domain: "loss_prevention",
+                summary: `Repeat variance pattern: ${v.count} spikes in last ${lossPolicy.repeat_window_days} days (location=${location_id}, sku=${sku})`,
+                evidence: { location_id, sku, spike_count: String(v.count), total_variance_value: String(Math.round(v.totalValue)) },
+                recommendation: lossRecommendations("high")
+            });
+        }
+    }
+    const skuTotals = new Map();
+    const locTotals = new Map();
+    for (const r of rows) {
+        skuTotals.set(r.sku, (skuTotals.get(r.sku) ?? 0) + r.variance_value);
+        locTotals.set(r.location_id, (locTotals.get(r.location_id) ?? 0) + r.variance_value);
+    }
+    const topN = lossPolicy.top_n;
+    const topSkus = [...skuTotals.entries()].sort((a, b) => b[1] - a[1]).slice(0, topN);
+    if (topSkus.length) {
+        findings.push({
+            severity: "low",
+            domain: "loss_prevention",
+            summary: `Hotspot SKUs by total variance value (top ${topN})`,
+            evidence: Object.fromEntries(topSkus.map(([sku, val], i) => [`sku_${i + 1}`, `${sku} ($${Math.round(val)})`])),
+            recommendation: lossRecommendations("low")
+        });
+    }
+    const topLocs = [...locTotals.entries()].sort((a, b) => b[1] - a[1]).slice(0, topN);
+    if (topLocs.length) {
+        findings.push({
+            severity: "low",
+            domain: "loss_prevention",
+            summary: `Hotspot locations by total variance value (top ${topN})`,
+            evidence: Object.fromEntries(topLocs.map(([loc, val], i) => [`location_${i + 1}`, `${loc} ($${Math.round(val)})`])),
+            recommendation: lossRecommendations("low")
+        });
+    }
+}
+// --- Maintenance engine (v0.8) ---
+function maintenanceEngine(findings, cache, mp) {
+    if (!existsSync("inputs/maintenance.csv"))
+        return;
+    const parsed = cache["inputs/maintenance.csv"] ?? parseCsv("inputs/maintenance.csv");
+    cache["inputs/maintenance.csv"] = parsed;
+    const req = ["ticket_id", "location_id", "asset_id", "issue_type", "priority", "opened_date"];
+    const miss = missingFields(parsed.headers, req);
+    if (miss.length > 0) {
+        findings.push({
+            severity: "low",
+            domain: "data_quality",
+            summary: `Missing required fields for facility maintenance evaluation (skipped)`,
+            data_quality: { missing_required_fields: miss, input: "maintenance.csv", check_id: "facility_maintenance_engine" }
+        });
+        return;
+    }
+    const nowMs = Date.now();
+    const staleMs = mp.stale_days_threshold * 24 * 60 * 60 * 1000;
+    const staleHighMs = mp.stale_high_priority_days * 24 * 60 * 60 * 1000;
+    const repeatWindowMs = mp.repeat_window_days * 24 * 60 * 60 * 1000;
+    const tickets = [];
+    for (const r of parsed.rows) {
+        const openedMs = toMillis(r["opened_date"]) ?? parseDateOnly(r["opened_date"]) ?? null;
+        if (openedMs === null)
+            continue;
+        const closedMs = toMillis(r["closed_date"]) ?? parseDateOnly(r["closed_date"]) ?? null;
+        tickets.push({
+            ticket_id: r["ticket_id"] ?? "",
+            location_id: r["location_id"] ?? "",
+            asset_id: r["asset_id"] ?? "",
+            issue_type: r["issue_type"] ?? "",
+            priority: r["priority"] ?? "",
+            openedMs,
+            closedMs,
+            vendor: r["vendor"] ?? "",
+            notes: r["notes"] ?? ""
+        });
+    }
+    // Stale tickets
+    for (const t of tickets) {
+        const isClosed = t.closedMs !== null;
+        if (isClosed)
+            continue;
+        const ageMs = nowMs - t.openedMs;
+        if (isHighPriority(t.priority) && ageMs >= staleHighMs) {
+            findings.push({
+                severity: "high",
+                domain: "facility_maintenance",
+                summary: `High-priority ticket is stale (> ${mp.stale_high_priority_days} days)`,
+                evidence: {
+                    ticket_id: t.ticket_id,
+                    location_id: t.location_id,
+                    asset_id: t.asset_id,
+                    issue_type: t.issue_type,
+                    priority: t.priority,
+                    opened_date: new Date(t.openedMs).toISOString(),
+                    vendor: t.vendor,
+                    notes: t.notes
+                },
+                recommendation: maintRecommendations("high")
+            });
+        }
+        else if (ageMs >= staleMs) {
+            findings.push({
+                severity: "medium",
+                domain: "facility_maintenance",
+                summary: `Ticket is stale (> ${mp.stale_days_threshold} days)`,
+                evidence: {
+                    ticket_id: t.ticket_id,
+                    location_id: t.location_id,
+                    asset_id: t.asset_id,
+                    issue_type: t.issue_type,
+                    priority: t.priority,
+                    opened_date: new Date(t.openedMs).toISOString(),
+                    vendor: t.vendor,
+                    notes: t.notes
+                },
+                recommendation: maintRecommendations("medium")
+            });
+        }
+    }
+    // Repeat issues: same asset + issue_type within window
+    const recent = tickets.filter(t => (nowMs - t.openedMs) <= repeatWindowMs);
+    const keyCounts = new Map();
+    for (const t of recent) {
+        const key = `${t.location_id}::${t.asset_id}::${t.issue_type}`;
+        keyCounts.set(key, (keyCounts.get(key) ?? 0) + 1);
+    }
+    for (const [key, c] of keyCounts.entries()) {
+        if (c >= mp.repeat_count_threshold) {
+            const [location_id, asset_id, issue_type] = key.split("::");
+            findings.push({
+                severity: "high",
+                domain: "facility_maintenance",
+                summary: `Repeat maintenance issue: ${c} tickets in last ${mp.repeat_window_days} days (location=${location_id}, asset=${asset_id})`,
+                evidence: { location_id, asset_id, issue_type, ticket_count: String(c) },
+                recommendation: maintRecommendations("high")
+            });
+        }
+    }
+    // Vendor lag summary (avg days-to-close)
+    const closed = tickets.filter(t => t.closedMs !== null && t.vendor);
+    const vendorAgg = new Map();
+    for (const t of closed) {
+        const days = (Number(t.closedMs) - t.openedMs) / (24 * 60 * 60 * 1000);
+        const cur = vendorAgg.get(t.vendor) ?? { totalDays: 0, count: 0 };
+        cur.totalDays += Math.max(0, days);
+        cur.count += 1;
+        vendorAgg.set(t.vendor, cur);
+    }
+    const top = [...vendorAgg.entries()]
+        .map(([vendor, v]) => ({ vendor, avgDays: v.totalDays / v.count, count: v.count }))
+        .sort((a, b) => b.avgDays - a.avgDays)
+        .slice(0, mp.top_n_vendors);
+    if (top.length) {
+        findings.push({
+            severity: "low",
+            domain: "facility_maintenance",
+            summary: `Vendor lag (avg days-to-close) hotspots (top ${mp.top_n_vendors})`,
+            evidence: Object.fromEntries(top.map((v, i) => [`vendor_${i + 1}`, `${v.vendor} (avg=${v.avgDays.toFixed(1)}d, n=${v.count})`])),
+            recommendation: maintRecommendations("low")
+        });
+    }
 }
 function main() {
     const runId = `ago1_${Date.now()}`;
@@ -222,6 +483,7 @@ function main() {
     const findings = [];
     const checks = existsSync("policies/checks.yaml") ? loadChecks("policies/checks.yaml") : [];
     const lossPolicy = loadLossPolicy("policies/loss_prevention.yaml");
+    const maintPolicy = loadMaintPolicy("policies/maintenance.yaml");
     const cache = {};
     for (const inp of autoInputs) {
         try {
@@ -231,7 +493,7 @@ function main() {
             findings.push({ severity: "high", domain: "ingestion", summary: `Unreadable input: ${inp}` });
         }
     }
-    // Base checks evaluation (email, pci, maintenance)
+    // Base checks evaluation (email, pci, etc.)
     for (const chk of checks) {
         const inpPath = join("inputs", chk.input);
         if (!existsSync(inpPath))
@@ -297,110 +559,9 @@ function main() {
             }
         }
     }
-    // Loss prevention: variance spikes + repeats + hotspots
-    if (existsSync("inputs/inventory_variance.csv")) {
-        const parsed = cache["inputs/inventory_variance.csv"] ?? parseCsv("inputs/inventory_variance.csv");
-        cache["inputs/inventory_variance.csv"] = parsed;
-        // Required fields for loss engine
-        const req = ["business_date", "location_id", "sku", "variance_value"];
-        const miss = missingFields(parsed.headers, req);
-        if (miss.length > 0) {
-            findings.push({
-                severity: "low",
-                domain: "data_quality",
-                summary: `Missing required fields for loss prevention evaluation (skipped)`,
-                data_quality: { missing_required_fields: miss, input: "inventory_variance.csv", check_id: "loss_prevention_engine" }
-            });
-        }
-        else {
-            const nowMs = Date.now();
-            const windowMs = lossPolicy.repeat_window_days * 24 * 60 * 60 * 1000;
-            const rows = [];
-            for (const r of parsed.rows) {
-                const d = parseDateOnly(r["business_date"]);
-                const v = parseNumber(r["variance_value"]);
-                if (d === null || v === null)
-                    continue;
-                rows.push({
-                    dMs: d,
-                    business_date: r["business_date"] ?? "",
-                    location_id: r["location_id"] ?? "",
-                    sku: r["sku"] ?? "",
-                    variance_value: v,
-                    variance_qty: r["variance_qty"],
-                    notes: r["notes"]
-                });
-            }
-            // Spike findings
-            const spikes = rows.filter(r => r.variance_value >= lossPolicy.spike_threshold_value);
-            for (const s of spikes) {
-                findings.push({
-                    severity: "medium",
-                    domain: "loss_prevention",
-                    summary: `Inventory variance spike detected (>= $${lossPolicy.spike_threshold_value})`,
-                    evidence: {
-                        business_date: s.business_date,
-                        location_id: s.location_id,
-                        sku: s.sku,
-                        variance_value: String(s.variance_value),
-                        variance_qty: s.variance_qty ?? "",
-                        notes: s.notes ?? ""
-                    },
-                    recommendation: lossRecommendations("medium")
-                });
-            }
-            // Repeat pattern escalation: same location+sku spikes >= repeat_count_threshold in window
-            const recentSpikes = spikes.filter(r => (nowMs - r.dMs) <= windowMs);
-            const keyCounts = new Map();
-            for (const r of recentSpikes) {
-                const key = `${r.location_id}::${r.sku}`;
-                const cur = keyCounts.get(key) ?? { count: 0, totalValue: 0 };
-                cur.count += 1;
-                cur.totalValue += r.variance_value;
-                keyCounts.set(key, cur);
-            }
-            for (const [key, v] of keyCounts.entries()) {
-                if (v.count >= lossPolicy.repeat_count_threshold) {
-                    const [location_id, sku] = key.split("::");
-                    findings.push({
-                        severity: "high",
-                        domain: "loss_prevention",
-                        summary: `Repeat variance pattern: ${v.count} spikes in last ${lossPolicy.repeat_window_days} days (location=${location_id}, sku=${sku})`,
-                        evidence: { location_id, sku, spike_count: String(v.count), total_variance_value: String(Math.round(v.totalValue)) },
-                        recommendation: lossRecommendations("high")
-                    });
-                }
-            }
-            // Hotspots: top SKUs and locations by variance_value (absolute)
-            const skuTotals = new Map();
-            const locTotals = new Map();
-            for (const r of rows) {
-                skuTotals.set(r.sku, (skuTotals.get(r.sku) ?? 0) + r.variance_value);
-                locTotals.set(r.location_id, (locTotals.get(r.location_id) ?? 0) + r.variance_value);
-            }
-            const topN = lossPolicy.top_n;
-            const topSkus = [...skuTotals.entries()].sort((a, b) => b[1] - a[1]).slice(0, topN);
-            if (topSkus.length) {
-                findings.push({
-                    severity: "low",
-                    domain: "loss_prevention",
-                    summary: `Hotspot SKUs by total variance value (top ${topN})`,
-                    evidence: Object.fromEntries(topSkus.map(([sku, val], i) => [`sku_${i + 1}`, `${sku} ($${Math.round(val)})`])),
-                    recommendation: lossRecommendations("low")
-                });
-            }
-            const topLocs = [...locTotals.entries()].sort((a, b) => b[1] - a[1]).slice(0, topN);
-            if (topLocs.length) {
-                findings.push({
-                    severity: "low",
-                    domain: "loss_prevention",
-                    summary: `Hotspot locations by total variance value (top ${topN})`,
-                    evidence: Object.fromEntries(topLocs.map(([loc, val], i) => [`location_${i + 1}`, `${loc} ($${Math.round(val)})`])),
-                    recommendation: lossRecommendations("low")
-                });
-            }
-        }
-    }
+    // Domain engines
+    lossEngine(findings, cache, lossPolicy);
+    maintenanceEngine(findings, cache, maintPolicy);
     if (autoInputs.length === 0) {
         findings.push({ severity: "medium", domain: "ingestion", summary: "No inputs provided and inputs/ is empty." });
     }

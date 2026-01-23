@@ -1,1 +1,6 @@
-opened_date,location_id,asset,issue,priority,status,due_date,last_update
+ticket_id,location_id,asset_id,issue_type,priority,opened_date,closed_date,vendor,notes
+T1,LOC1,ICE1,ice_machine_leak,high,2026-01-15,,VendorA,leak ongoing
+T2,LOC1,ICE1,ice_machine_leak,medium,2026-01-05,2026-01-10,VendorA,patched
+T3,LOC2,HVAC9,hvac_failure,urgent,2026-01-18,,VendorB,dining room hot
+T4,LOC2,HVAC9,hvac_failure,high,2026-01-10,2026-01-20,VendorB,compressor replaced
+T5,LOC3,FRY2,fryer_fault,medium,2026-01-01,2026-01-25,VendorC,intermittent

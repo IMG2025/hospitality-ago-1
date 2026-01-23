@@ -1,0 +1,6 @@
+maintenance:
+  stale_days_threshold: 7          # ticket open > N days => stale (MEDIUM)
+  stale_high_priority_days: 3      # high priority open > N days => HIGH
+  repeat_window_days: 30           # lookback window for repeat issues
+  repeat_count_threshold: 2        # repeats within window => HIGH
+  top_n_vendors: 5                 # vendor lag summary

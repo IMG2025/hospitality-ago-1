@@ -1,3 +1,24 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+mkdir -p src policies artifacts logs inputs
+
+cat > policies/maintenance.yaml <<'YAML'
+maintenance:
+  stale_days_threshold: 7          # ticket open > N days => stale (MEDIUM)
+  stale_high_priority_days: 3      # high priority open > N days => HIGH
+  repeat_window_days: 30           # lookback window for repeat issues
+  repeat_count_threshold: 2        # repeats within window => HIGH
+  top_n_vendors: 5                 # vendor lag summary
+YAML
+
+# Canonical maintenance template (safe if overwritten)
+cat > inputs/maintenance.csv <<'EOF'
+ticket_id,location_id,asset_id,issue_type,priority,opened_date,closed_date,vendor,notes
+EOF
+
+# Replace src/index.ts with v0.8 maintenance intelligence added (keeps v0.7 loss + v0.6 email + v0.5 scoring)
+cat > src/index.ts <<'TS'
 import { existsSync, mkdirSync, readFileSync, writeFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
@@ -667,3 +688,6 @@ function main() {
 }
 
 main();
+TS
+
+npm run build
