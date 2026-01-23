@@ -1,2 +1,3 @@
-event_type,actor
-rule_created,user1
+timestamp,event_type,actor,ip,geo,detail
+2026-01-23T01:00:00Z,rule_created,user1,1.1.1.1,US,forward rule created
+2026-01-23T01:10:00Z,rule_modified,user1,1.1.1.1,US,forward rule modified

@@ -1,5 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
+const WINDOW_MINUTES = 15;
 function ensureDir(p) { if (!existsSync(p))
     mkdirSync(p, { recursive: true }); }
 function now() { return new Date().toISOString(); }
@@ -96,12 +97,17 @@ function pickEvidence(fields, row) {
             out[f] = row[f];
     return out;
 }
+function toMillis(ts) {
+    if (!ts)
+        return null;
+    const d = new Date(ts);
+    return isNaN(d.getTime()) ? null : d.getTime();
+}
 function maxSeverity(a, b) {
     const rank = { low: 1, medium: 2, high: 3 };
     return rank[a] >= rank[b] ? a : b;
 }
 function computeRisk(findings) {
-    // We intentionally down-weight data_quality. It's a governance signal, not direct exposure.
     const weights = { high: 30, medium: 12, low: 3 };
     let high = 0, medium = 0, low = 0;
     for (const f of findings) {
@@ -117,7 +123,6 @@ function computeRisk(findings) {
             low++;
     }
     const raw = high * weights.high + medium * weights.medium + low * weights.low;
-    // Saturating score: approaches 100 as raw grows.
     const score = Math.max(0, Math.min(100, Math.round(100 * (1 - Math.exp(-raw / 60)))));
     let level = "low";
     if (score >= 80)
@@ -126,7 +131,6 @@ function computeRisk(findings) {
         level = "high";
     else if (score >= 25)
         level = "moderate";
-    // top domains (excluding data_quality)
     const domainMap = new Map();
     for (const f of findings) {
         if (f.domain === "data_quality")
@@ -140,30 +144,26 @@ function computeRisk(findings) {
         .map(([domain, v]) => ({ domain, count: v.count, maxSeverity: v.max }))
         .sort((a, b) => b.count - a.count)
         .slice(0, 5);
-    return {
-        score,
-        level,
-        weights,
-        counts: { high, medium, low },
-        top_domains
-    };
+    return { score, level, weights, counts: { high, medium, low }, top_domains };
 }
-function executiveNextSteps(risk, findings) {
-    const steps = [];
-    if (risk.level === "critical" || risk.level === "high") {
-        steps.push("Initiate same-day human review of HIGH findings; preserve evidence artifacts for audit.");
-        steps.push("Confirm whether any finding indicates active compromise or policy breach; if yes, follow incident response playbook.");
-    }
-    else if (risk.level === "moderate") {
-        steps.push("Review MEDIUM findings within 72 hours and confirm corrective actions.");
-    }
-    else {
-        steps.push("No urgent action. Continue monitoring and validate data coverage.");
-    }
-    const dq = findings.filter(f => f.domain === "data_quality");
-    if (dq.length > 0)
-        steps.push("Address data gaps flagged under data_quality to improve assessment accuracy.");
-    return steps;
+function emailRecommendations(sev) {
+    if (sev === "high")
+        return [
+            "Review mailbox forwarding and inbox rules immediately.",
+            "Force password reset for affected account(s).",
+            "Review OAuth grants and recent sign-in activity.",
+            "Preserve logs and artifacts for incident response."
+        ];
+    if (sev === "medium")
+        return [
+            "Review recent sign-in and rule change activity.",
+            "Confirm whether changes were authorized.",
+            "Increase monitoring for the next 24 hours."
+        ];
+    return [
+        "No immediate action required.",
+        "Continue monitoring email security events."
+    ];
 }
 function main() {
     const runId = `ago1_${Date.now()}`;
@@ -183,6 +183,7 @@ function main() {
             findings.push({ severity: "high", domain: "ingestion", summary: `Unreadable input: ${inp}` });
         }
     }
+    // Base rule evaluation
     for (const chk of checks) {
         const inpPath = join("inputs", chk.input);
         if (!existsSync(inpPath))
@@ -201,12 +202,49 @@ function main() {
         }
         for (const row of parsed.rows) {
             if (evalRule(chk.rule, row)) {
-                findings.push({
+                const base = {
                     severity: chk.severity,
                     domain: chk.domain,
                     summary: `Policy match: ${chk.id}`,
                     evidence: pickEvidence(chk.evidence_fields, row)
-                });
+                };
+                findings.push(base);
+            }
+        }
+    }
+    // Email intrusion correlation & escalation
+    const emailFindings = findings.filter(f => f.domain === "email_intrusion");
+    if (existsSync("inputs/email_security.csv")) {
+        const parsed = cache["inputs/email_security.csv"] ?? parseCsv("inputs/email_security.csv");
+        cache["inputs/email_security.csv"] = parsed;
+        const byActor = new Map();
+        for (const r of parsed.rows) {
+            const actor = r["actor"] || "unknown";
+            const ts = toMillis(r["timestamp"]);
+            if (!ts)
+                continue;
+            const arr = byActor.get(actor) ?? [];
+            arr.push(ts);
+            byActor.set(actor, arr);
+        }
+        for (const [actor, times] of byActor.entries()) {
+            times.sort((a, b) => a - b);
+            let count = 1;
+            for (let i = 1; i < times.length; i++) {
+                const diffMin = (times[i] - times[i - 1]) / 60000;
+                if (diffMin <= WINDOW_MINUTES)
+                    count++;
+                else
+                    count = 1;
+                if (count >= 2) {
+                    findings.push({
+                        severity: "high",
+                        domain: "email_intrusion",
+                        summary: `Repeated email security events for actor '${actor}' within ${WINDOW_MINUTES} minutes`,
+                        recommendation: emailRecommendations("high")
+                    });
+                    break;
+                }
             }
         }
     }
@@ -227,24 +265,33 @@ function main() {
     md.push(`## Executive Summary`);
     md.push(`- Risk Score: **${risk.score}/100** (**${risk.level.toUpperCase()}**)`);
     md.push(`- Findings: HIGH=${risk.counts.high}, MEDIUM=${risk.counts.medium}, LOW=${risk.counts.low} (data_quality counted as LOW)`);
-    if (risk.top_domains.length) {
+    if (risk.top_domains.length)
         md.push(`- Top Domains: ${risk.top_domains.map(d => `${d.domain}(${d.count}, max=${d.maxSeverity})`).join(", ")}`);
-    }
-    else {
+    else
         md.push(`- Top Domains: None`);
-    }
     md.push(``);
     md.push(`### Recommended Next Steps`);
-    for (const s of executiveNextSteps(risk, findings))
-        md.push(`- ${s}`);
+    if (risk.level === "critical" || risk.level === "high") {
+        md.push(`- Initiate same-day human review of HIGH findings and preserve evidence.`);
+    }
+    else if (risk.level === "moderate") {
+        md.push(`- Review MEDIUM findings within 72 hours.`);
+    }
+    else {
+        md.push(`- No urgent action. Continue monitoring and validate data coverage.`);
+    }
+    if (findings.some(f => f.domain === "data_quality")) {
+        md.push(`- Address data gaps flagged under data_quality to improve assessment accuracy.`);
+    }
     md.push(``);
     md.push(`## Findings (${findings.length})`);
     if (findings.length === 0)
         md.push(`- None`);
     for (const f of findings) {
         const ev = f.evidence ? Object.entries(f.evidence).map(([k, v]) => `${k}=${v}`).join(", ") : "";
+        const rec = f.recommendation ? ` | rec: ${f.recommendation.join("; ")}` : "";
         const dq = f.data_quality ? ` missing=${f.data_quality.missing_required_fields.join("|")} input=${f.data_quality.input}` : "";
-        md.push(`- **${f.severity.toUpperCase()}** [${f.domain}] ${f.summary}${ev ? ` — _${ev}_` : ""}${dq ? ` — _${dq}_` : ""}`);
+        md.push(`- **${f.severity.toUpperCase()}** [${f.domain}] ${f.summary}${ev ? ` — _${ev}_` : ""}${dq ? ` — _${dq}_` : ""}${rec}`);
     }
     md.push(``);
     md.push(`## Inputs`);

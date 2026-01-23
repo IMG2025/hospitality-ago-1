@@ -1,3 +1,10 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+mkdir -p src artifacts logs policies
+
+# Replace src/index.ts with v0.6 email correlation + escalation (keeps v0.5 scoring)
+cat > src/index.ts <<'TS'
 import { existsSync, mkdirSync, readFileSync, writeFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
@@ -342,3 +349,6 @@ function main() {
 }
 
 main();
+TS
+
+npm run build

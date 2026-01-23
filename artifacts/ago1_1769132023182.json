@@ -1,0 +1,70 @@
+{
+  "runId": "ago1_1769132023182",
+  "timestamp": "2026-01-23T01:33:43.183Z",
+  "inputs": [
+    "inputs/email_security.csv",
+    "inputs/inventory_variance.csv",
+    "inputs/maintenance.csv",
+    "inputs/pci_events.csv"
+  ],
+  "findings": [
+    {
+      "severity": "high",
+      "domain": "email_intrusion",
+      "summary": "Policy match: email_forwarding_rule_created",
+      "evidence": {
+        "event_type": "rule_created",
+        "detail": "forward rule created",
+        "actor": "user1",
+        "ip": "1.1.1.1",
+        "geo": "US",
+        "timestamp": "2026-01-23T01:00:00Z"
+      }
+    },
+    {
+      "severity": "high",
+      "domain": "email_intrusion",
+      "summary": "Policy match: email_forwarding_rule_created",
+      "evidence": {
+        "event_type": "rule_modified",
+        "detail": "forward rule modified",
+        "actor": "user1",
+        "ip": "1.1.1.1",
+        "geo": "US",
+        "timestamp": "2026-01-23T01:10:00Z"
+      }
+    },
+    {
+      "severity": "high",
+      "domain": "email_intrusion",
+      "summary": "Repeated email security events for actor 'user1' within 15 minutes",
+      "recommendation": [
+        "Review mailbox forwarding and inbox rules immediately.",
+        "Force password reset for affected account(s).",
+        "Review OAuth grants and recent sign-in activity.",
+        "Preserve logs and artifacts for incident response."
+      ]
+    }
+  ],
+  "risk": {
+    "score": 78,
+    "level": "high",
+    "weights": {
+      "high": 30,
+      "medium": 12,
+      "low": 3
+    },
+    "counts": {
+      "high": 3,
+      "medium": 0,
+      "low": 0
+    },
+    "top_domains": [
+      {
+        "domain": "email_intrusion",
+        "count": 3,
+        "maxSeverity": "high"
+      }
+    ]
+  }
+}
