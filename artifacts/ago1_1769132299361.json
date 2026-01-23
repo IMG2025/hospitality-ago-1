@@ -1,0 +1,180 @@
+{
+  "runId": "ago1_1769132299361",
+  "timestamp": "2026-01-23T01:38:19.361Z",
+  "inputs": [
+    "inputs/email_security.csv",
+    "inputs/inventory_variance.csv",
+    "inputs/maintenance.csv",
+    "inputs/pci_events.csv"
+  ],
+  "findings": [
+    {
+      "severity": "high",
+      "domain": "email_intrusion",
+      "summary": "Policy match: email_forwarding_rule_created",
+      "evidence": {
+        "event_type": "rule_created",
+        "detail": "forward rule created",
+        "actor": "user1",
+        "ip": "1.1.1.1",
+        "geo": "US",
+        "timestamp": "2026-01-23T01:00:00Z"
+      },
+      "recommendation": [
+        "Review mailbox forwarding and inbox rules immediately.",
+        "Force password reset for affected account(s).",
+        "Review OAuth grants and recent sign-in activity.",
+        "Preserve logs and artifacts for incident response."
+      ]
+    },
+    {
+      "severity": "high",
+      "domain": "email_intrusion",
+      "summary": "Policy match: email_forwarding_rule_created",
+      "evidence": {
+        "event_type": "rule_modified",
+        "detail": "forward rule modified",
+        "actor": "user1",
+        "ip": "1.1.1.1",
+        "geo": "US",
+        "timestamp": "2026-01-23T01:10:00Z"
+      },
+      "recommendation": [
+        "Review mailbox forwarding and inbox rules immediately.",
+        "Force password reset for affected account(s).",
+        "Review OAuth grants and recent sign-in activity.",
+        "Preserve logs and artifacts for incident response."
+      ]
+    },
+    {
+      "severity": "high",
+      "domain": "email_intrusion",
+      "summary": "Repeated email security events for actor 'user1' within 15 minutes",
+      "recommendation": [
+        "Review mailbox forwarding and inbox rules immediately.",
+        "Force password reset for affected account(s).",
+        "Review OAuth grants and recent sign-in activity.",
+        "Preserve logs and artifacts for incident response."
+      ]
+    },
+    {
+      "severity": "medium",
+      "domain": "loss_prevention",
+      "summary": "Inventory variance spike detected (>= $250)",
+      "evidence": {
+        "business_date": "2026-01-20",
+        "location_id": "LOC1",
+        "sku": "VODKA750",
+        "variance_value": "300",
+        "variance_qty": "-3",
+        "notes": "variance spike"
+      },
+      "recommendation": [
+        "Review variance drivers (waste, spoilage, comps) for affected SKU/location/date.",
+        "Spot-check receiving and storage controls for affected SKU(s)."
+      ]
+    },
+    {
+      "severity": "medium",
+      "domain": "loss_prevention",
+      "summary": "Inventory variance spike detected (>= $250)",
+      "evidence": {
+        "business_date": "2026-01-22",
+        "location_id": "LOC1",
+        "sku": "VODKA750",
+        "variance_value": "420",
+        "variance_qty": "-4",
+        "notes": "repeat spike"
+      },
+      "recommendation": [
+        "Review variance drivers (waste, spoilage, comps) for affected SKU/location/date.",
+        "Spot-check receiving and storage controls for affected SKU(s)."
+      ]
+    },
+    {
+      "severity": "medium",
+      "domain": "loss_prevention",
+      "summary": "Inventory variance spike detected (>= $250)",
+      "evidence": {
+        "business_date": "2026-01-23",
+        "location_id": "LOC2",
+        "sku": "BEEF5LB",
+        "variance_value": "260",
+        "variance_qty": "-5",
+        "notes": "spike"
+      },
+      "recommendation": [
+        "Review variance drivers (waste, spoilage, comps) for affected SKU/location/date.",
+        "Spot-check receiving and storage controls for affected SKU(s)."
+      ]
+    },
+    {
+      "severity": "high",
+      "domain": "loss_prevention",
+      "summary": "Repeat variance pattern: 2 spikes in last 7 days (location=LOC1, sku=VODKA750)",
+      "evidence": {
+        "location_id": "LOC1",
+        "sku": "VODKA750",
+        "spike_count": "2",
+        "total_variance_value": "720"
+      },
+      "recommendation": [
+        "Validate inventory counts and receiving records for affected SKU/location/date.",
+        "Review waste/comp/void logs for the same period (no individual attribution).",
+        "Confirm vendor deliveries and invoice quantities; check for unit-of-measure mismatches.",
+        "Increase cycle counts for affected SKU(s) for the next 7 days."
+      ]
+    },
+    {
+      "severity": "low",
+      "domain": "loss_prevention",
+      "summary": "Hotspot SKUs by total variance value (top 5)",
+      "evidence": {
+        "sku_1": "VODKA750 ($720)",
+        "sku_2": "BEEF5LB ($380)",
+        "sku_3": "LIME ($90)"
+      },
+      "recommendation": [
+        "Monitor variance trends and confirm data coverage."
+      ]
+    },
+    {
+      "severity": "low",
+      "domain": "loss_prevention",
+      "summary": "Hotspot locations by total variance value (top 5)",
+      "evidence": {
+        "location_1": "LOC1 ($810)",
+        "location_2": "LOC2 ($380)"
+      },
+      "recommendation": [
+        "Monitor variance trends and confirm data coverage."
+      ]
+    }
+  ],
+  "risk": {
+    "score": 93,
+    "level": "critical",
+    "weights": {
+      "high": 30,
+      "medium": 12,
+      "low": 3
+    },
+    "counts": {
+      "high": 4,
+      "medium": 3,
+      "low": 2
+    },
+    "top_domains": [
+      {
+        "domain": "loss_prevention",
+        "count": 6,
+        "maxSeverity": "high"
+      },
+      {
+        "domain": "email_intrusion",
+        "count": 3,
+        "maxSeverity": "high"
+      }
+    ]
+  }
+}

@@ -1,1 +1,6 @@
 business_date,location_id,sku,expected_qty,actual_qty,variance_qty,variance_value,notes
+2026-01-20,LOC1,VODKA750,10,7,-3,300,variance spike
+2026-01-22,LOC1,VODKA750,10,6,-4,420,repeat spike
+2026-01-21,LOC2,BEEF5LB,20,18,-2,120,normal
+2026-01-23,LOC2,BEEF5LB,20,15,-5,260,spike
+2026-01-19,LOC1,LIME,50,40,-10,90,normal

@@ -1,3 +1,24 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+mkdir -p src policies artifacts logs inputs
+
+# Add loss-prevention policy thresholds (simple + tunable)
+cat > policies/loss_prevention.yaml <<'YAML'
+loss_prevention:
+  spike_threshold_value: 250        # USD variance_value triggers a spike
+  repeat_window_days: 7             # lookback for repeat patterns
+  repeat_count_threshold: 2         # repeats within window escalate
+  top_n: 5                          # hotspots lists
+YAML
+
+# Ensure canonical inventory variance template exists
+cat > inputs/inventory_variance.csv <<'EOF'
+business_date,location_id,sku,expected_qty,actual_qty,variance_qty,variance_value,notes
+EOF
+
+# Replace src/index.ts with v0.7 loss prevention intelligence added (keeps v0.6 email + v0.5 scoring)
+cat > src/index.ts <<'TS'
 import { existsSync, mkdirSync, readFileSync, writeFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
@@ -501,3 +522,6 @@ function main() {
 }
 
 main();
+TS
+
+npm run build

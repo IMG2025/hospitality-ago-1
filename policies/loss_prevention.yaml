@@ -1,0 +1,5 @@
+loss_prevention:
+  spike_threshold_value: 250        # USD variance_value triggers a spike
+  repeat_window_days: 7             # lookback for repeat patterns
+  repeat_count_threshold: 2         # repeats within window escalate
+  top_n: 5                          # hotspots lists

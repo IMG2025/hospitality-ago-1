@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
-const WINDOW_MINUTES = 15;
+const EMAIL_WINDOW_MINUTES = 15;
 function ensureDir(p) { if (!existsSync(p))
     mkdirSync(p, { recursive: true }); }
 function now() { return new Date().toISOString(); }
@@ -62,6 +62,24 @@ function loadChecks(yamlPath) {
         checks.push(cur);
     return checks.filter(c => c.id && c.domain && c.severity && c.input && c.rule && c.rule.field);
 }
+function loadLossPolicy(path) {
+    const defaults = { spike_threshold_value: 250, repeat_window_days: 7, repeat_count_threshold: 2, top_n: 5 };
+    if (!existsSync(path))
+        return defaults;
+    const raw = readText(path).split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+    for (const l of raw) {
+        if (l.startsWith("spike_threshold_value:"))
+            defaults.spike_threshold_value = Number(l.split(":")[1].trim()) || defaults.spike_threshold_value;
+        if (l.startsWith("repeat_window_days:"))
+            defaults.repeat_window_days = Number(l.split(":")[1].trim()) || defaults.repeat_window_days;
+        if (l.startsWith("repeat_count_threshold:"))
+            defaults.repeat_count_threshold = Number(l.split(":")[1].trim()) || defaults.repeat_count_threshold;
+        if (l.startsWith("top_n:"))
+            defaults.top_n = Number(l.split(":")[1].trim()) || defaults.top_n;
+    }
+    return defaults;
+}
+// --- CSV utilities ---
 function parseCsv(path) {
     const text = readText(path);
     const lines = text.split(/\r?\n/).filter(l => l.trim().length > 0);
@@ -107,6 +125,7 @@ function maxSeverity(a, b) {
     const rank = { low: 1, medium: 2, high: 3 };
     return rank[a] >= rank[b] ? a : b;
 }
+// --- Risk scoring (from v0.5) ---
 function computeRisk(findings) {
     const weights = { high: 30, medium: 12, low: 3 };
     let high = 0, medium = 0, low = 0;
@@ -146,6 +165,7 @@ function computeRisk(findings) {
         .slice(0, 5);
     return { score, level, weights, counts: { high, medium, low }, top_domains };
 }
+// --- Email recommendations & correlation (from v0.6) ---
 function emailRecommendations(sev) {
     if (sev === "high")
         return [
@@ -160,10 +180,37 @@ function emailRecommendations(sev) {
             "Confirm whether changes were authorized.",
             "Increase monitoring for the next 24 hours."
         ];
-    return [
-        "No immediate action required.",
-        "Continue monitoring email security events."
-    ];
+    return ["No immediate action required.", "Continue monitoring email security events."];
+}
+// --- Loss prevention recommendations ---
+function lossRecommendations(sev) {
+    if (sev === "high")
+        return [
+            "Validate inventory counts and receiving records for affected SKU/location/date.",
+            "Review waste/comp/void logs for the same period (no individual attribution).",
+            "Confirm vendor deliveries and invoice quantities; check for unit-of-measure mismatches.",
+            "Increase cycle counts for affected SKU(s) for the next 7 days."
+        ];
+    if (sev === "medium")
+        return [
+            "Review variance drivers (waste, spoilage, comps) for affected SKU/location/date.",
+            "Spot-check receiving and storage controls for affected SKU(s)."
+        ];
+    return ["Monitor variance trends and confirm data coverage."];
+}
+// --- Loss prevention engine ---
+function parseNumber(x) {
+    if (!x)
+        return null;
+    const v = Number(String(x).replace(/[^0-9.\-]/g, ""));
+    return Number.isFinite(v) ? v : null;
+}
+function parseDateOnly(x) {
+    if (!x)
+        return null;
+    // Treat YYYY-MM-DD as UTC midnight
+    const d = new Date(x + "T00:00:00Z");
+    return isNaN(d.getTime()) ? null : d.getTime();
 }
 function main() {
     const runId = `ago1_${Date.now()}`;
@@ -174,6 +221,7 @@ function main() {
     const autoInputs = argvInputs.length ? argvInputs : listInputsDir();
     const findings = [];
     const checks = existsSync("policies/checks.yaml") ? loadChecks("policies/checks.yaml") : [];
+    const lossPolicy = loadLossPolicy("policies/loss_prevention.yaml");
     const cache = {};
     for (const inp of autoInputs) {
         try {
@@ -183,7 +231,7 @@ function main() {
             findings.push({ severity: "high", domain: "ingestion", summary: `Unreadable input: ${inp}` });
         }
     }
-    // Base rule evaluation
+    // Base checks evaluation (email, pci, maintenance)
     for (const chk of checks) {
         const inpPath = join("inputs", chk.input);
         if (!existsSync(inpPath))
@@ -208,12 +256,13 @@ function main() {
                     summary: `Policy match: ${chk.id}`,
                     evidence: pickEvidence(chk.evidence_fields, row)
                 };
+                if (chk.domain === "email_intrusion")
+                    base.recommendation = emailRecommendations(chk.severity);
                 findings.push(base);
             }
         }
     }
-    // Email intrusion correlation & escalation
-    const emailFindings = findings.filter(f => f.domain === "email_intrusion");
+    // Email correlation (15-minute window)
     if (existsSync("inputs/email_security.csv")) {
         const parsed = cache["inputs/email_security.csv"] ?? parseCsv("inputs/email_security.csv");
         cache["inputs/email_security.csv"] = parsed;
@@ -232,7 +281,7 @@ function main() {
             let count = 1;
             for (let i = 1; i < times.length; i++) {
                 const diffMin = (times[i] - times[i - 1]) / 60000;
-                if (diffMin <= WINDOW_MINUTES)
+                if (diffMin <= EMAIL_WINDOW_MINUTES)
                     count++;
                 else
                     count = 1;
@@ -240,11 +289,115 @@ function main() {
                     findings.push({
                         severity: "high",
                         domain: "email_intrusion",
-                        summary: `Repeated email security events for actor '${actor}' within ${WINDOW_MINUTES} minutes`,
+                        summary: `Repeated email security events for actor '${actor}' within ${EMAIL_WINDOW_MINUTES} minutes`,
                         recommendation: emailRecommendations("high")
                     });
                     break;
                 }
+            }
+        }
+    }
+    // Loss prevention: variance spikes + repeats + hotspots
+    if (existsSync("inputs/inventory_variance.csv")) {
+        const parsed = cache["inputs/inventory_variance.csv"] ?? parseCsv("inputs/inventory_variance.csv");
+        cache["inputs/inventory_variance.csv"] = parsed;
+        // Required fields for loss engine
+        const req = ["business_date", "location_id", "sku", "variance_value"];
+        const miss = missingFields(parsed.headers, req);
+        if (miss.length > 0) {
+            findings.push({
+                severity: "low",
+                domain: "data_quality",
+                summary: `Missing required fields for loss prevention evaluation (skipped)`,
+                data_quality: { missing_required_fields: miss, input: "inventory_variance.csv", check_id: "loss_prevention_engine" }
+            });
+        }
+        else {
+            const nowMs = Date.now();
+            const windowMs = lossPolicy.repeat_window_days * 24 * 60 * 60 * 1000;
+            const rows = [];
+            for (const r of parsed.rows) {
+                const d = parseDateOnly(r["business_date"]);
+                const v = parseNumber(r["variance_value"]);
+                if (d === null || v === null)
+                    continue;
+                rows.push({
+                    dMs: d,
+                    business_date: r["business_date"] ?? "",
+                    location_id: r["location_id"] ?? "",
+                    sku: r["sku"] ?? "",
+                    variance_value: v,
+                    variance_qty: r["variance_qty"],
+                    notes: r["notes"]
+                });
+            }
+            // Spike findings
+            const spikes = rows.filter(r => r.variance_value >= lossPolicy.spike_threshold_value);
+            for (const s of spikes) {
+                findings.push({
+                    severity: "medium",
+                    domain: "loss_prevention",
+                    summary: `Inventory variance spike detected (>= $${lossPolicy.spike_threshold_value})`,
+                    evidence: {
+                        business_date: s.business_date,
+                        location_id: s.location_id,
+                        sku: s.sku,
+                        variance_value: String(s.variance_value),
+                        variance_qty: s.variance_qty ?? "",
+                        notes: s.notes ?? ""
+                    },
+                    recommendation: lossRecommendations("medium")
+                });
+            }
+            // Repeat pattern escalation: same location+sku spikes >= repeat_count_threshold in window
+            const recentSpikes = spikes.filter(r => (nowMs - r.dMs) <= windowMs);
+            const keyCounts = new Map();
+            for (const r of recentSpikes) {
+                const key = `${r.location_id}::${r.sku}`;
+                const cur = keyCounts.get(key) ?? { count: 0, totalValue: 0 };
+                cur.count += 1;
+                cur.totalValue += r.variance_value;
+                keyCounts.set(key, cur);
+            }
+            for (const [key, v] of keyCounts.entries()) {
+                if (v.count >= lossPolicy.repeat_count_threshold) {
+                    const [location_id, sku] = key.split("::");
+                    findings.push({
+                        severity: "high",
+                        domain: "loss_prevention",
+                        summary: `Repeat variance pattern: ${v.count} spikes in last ${lossPolicy.repeat_window_days} days (location=${location_id}, sku=${sku})`,
+                        evidence: { location_id, sku, spike_count: String(v.count), total_variance_value: String(Math.round(v.totalValue)) },
+                        recommendation: lossRecommendations("high")
+                    });
+                }
+            }
+            // Hotspots: top SKUs and locations by variance_value (absolute)
+            const skuTotals = new Map();
+            const locTotals = new Map();
+            for (const r of rows) {
+                skuTotals.set(r.sku, (skuTotals.get(r.sku) ?? 0) + r.variance_value);
+                locTotals.set(r.location_id, (locTotals.get(r.location_id) ?? 0) + r.variance_value);
+            }
+            const topN = lossPolicy.top_n;
+            const topSkus = [...skuTotals.entries()].sort((a, b) => b[1] - a[1]).slice(0, topN);
+            if (topSkus.length) {
+                findings.push({
+                    severity: "low",
+                    domain: "loss_prevention",
+                    summary: `Hotspot SKUs by total variance value (top ${topN})`,
+                    evidence: Object.fromEntries(topSkus.map(([sku, val], i) => [`sku_${i + 1}`, `${sku} ($${Math.round(val)})`])),
+                    recommendation: lossRecommendations("low")
+                });
+            }
+            const topLocs = [...locTotals.entries()].sort((a, b) => b[1] - a[1]).slice(0, topN);
+            if (topLocs.length) {
+                findings.push({
+                    severity: "low",
+                    domain: "loss_prevention",
+                    summary: `Hotspot locations by total variance value (top ${topN})`,
+                    evidence: Object.fromEntries(topLocs.map(([loc, val], i) => [`location_${i + 1}`, `${loc} ($${Math.round(val)})`])),
+                    recommendation: lossRecommendations("low")
+                });
             }
         }
     }
@@ -271,18 +424,14 @@ function main() {
         md.push(`- Top Domains: None`);
     md.push(``);
     md.push(`### Recommended Next Steps`);
-    if (risk.level === "critical" || risk.level === "high") {
+    if (risk.level === "critical" || risk.level === "high")
         md.push(`- Initiate same-day human review of HIGH findings and preserve evidence.`);
-    }
-    else if (risk.level === "moderate") {
+    else if (risk.level === "moderate")
         md.push(`- Review MEDIUM findings within 72 hours.`);
-    }
-    else {
+    else
         md.push(`- No urgent action. Continue monitoring and validate data coverage.`);
-    }
-    if (findings.some(f => f.domain === "data_quality")) {
+    if (findings.some(f => f.domain === "data_quality"))
         md.push(`- Address data gaps flagged under data_quality to improve assessment accuracy.`);
-    }
     md.push(``);
     md.push(`## Findings (${findings.length})`);
     if (findings.length === 0)
