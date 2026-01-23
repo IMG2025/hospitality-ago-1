@@ -1,0 +1,6 @@
+inventory_reorder:
+  low_stock_ratio: 0.50            # on_hand <= (par * ratio) => MEDIUM
+  critical_stock_ratio: 0.10       # on_hand <= (par * ratio) => HIGH
+  stockout_is_high: true           # on_hand <= 0 => HIGH
+  default_par_level_qty: 10        # used if par_level_qty missing
+  top_n: 5                         # hotspots lists

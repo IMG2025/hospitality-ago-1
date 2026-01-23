@@ -1,3 +1,23 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+mkdir -p src policies artifacts logs inputs
+
+cat > policies/inventory_reorder.yaml <<'YAML'
+inventory_reorder:
+  low_stock_ratio: 0.50            # on_hand <= (par * ratio) => MEDIUM
+  critical_stock_ratio: 0.10       # on_hand <= (par * ratio) => HIGH
+  stockout_is_high: true           # on_hand <= 0 => HIGH
+  default_par_level_qty: 10        # used if par_level_qty missing
+  top_n: 5                         # hotspots lists
+YAML
+
+# Canonical inventory levels template
+cat > inputs/inventory_levels.csv <<'EOF'
+business_date,location_id,sku,on_hand_qty,par_level_qty,unit_cost,vendor,notes
+EOF
+
+cat > src/index.ts <<'TS'
 import { existsSync, mkdirSync, readFileSync, writeFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
@@ -815,3 +835,6 @@ function main() {
 }
 
 main();
+TS
+
+npm run build

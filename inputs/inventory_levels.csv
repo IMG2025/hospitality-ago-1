@@ -1,0 +1,5 @@
+business_date,location_id,sku,on_hand_qty,par_level_qty,unit_cost,vendor,notes
+2026-01-23,LOC1,VODKA750,0,12,18.50,VendorLiquor,stockout risk
+2026-01-23,LOC1,LIME,3,20,0.35,VendorProduce,low
+2026-01-23,LOC2,BEEF5LB,1,10,42.00,VendorMeat,critical
+2026-01-23,LOC2,NAPKINS,40,100,0.02,VendorPaper,low

@@ -1,0 +1,65 @@
+DRAFT PURCHASE ORDER NOTICE (NOT SENT)
+Vendor: VendorLiquor
+Location: LOC1
+Business Date: 2026-01-23
+
+Replenishment candidates:
+- SKU VODKA750: suggested_qty=12 (on_hand=0, par=12, unit_cost=$18.5, est=$222)
+
+Estimated total cost: $222
+
+Operator review required:
+- Confirm open POs and lead times
+- Validate unit-of-measure and par settings
+- Approve quantities prior to submission
+
+---
+
+DRAFT PURCHASE ORDER NOTICE (NOT SENT)
+Vendor: VendorMeat
+Location: LOC2
+Business Date: 2026-01-23
+
+Replenishment candidates:
+- SKU BEEF5LB: suggested_qty=9 (on_hand=1, par=10, unit_cost=$42, est=$378)
+
+Estimated total cost: $378
+
+Operator review required:
+- Confirm open POs and lead times
+- Validate unit-of-measure and par settings
+- Approve quantities prior to submission
+
+---
+
+DRAFT PURCHASE ORDER NOTICE (NOT SENT)
+Vendor: VendorProduce
+Location: LOC1
+Business Date: 2026-01-23
+
+Replenishment candidates:
+- SKU LIME: suggested_qty=17 (on_hand=3, par=20, unit_cost=$0.35, est=$5.95)
+
+Estimated total cost: $5.95
+
+Operator review required:
+- Confirm open POs and lead times
+- Validate unit-of-measure and par settings
+- Approve quantities prior to submission
+
+---
+
+DRAFT PURCHASE ORDER NOTICE (NOT SENT)
+Vendor: VendorPaper
+Location: LOC2
+Business Date: 2026-01-23
+
+Replenishment candidates:
+- SKU NAPKINS: suggested_qty=60 (on_hand=40, par=100, unit_cost=$0.02, est=$1.2)
+
+Estimated total cost: $1.2
+
+Operator review required:
+- Confirm open POs and lead times
+- Validate unit-of-measure and par settings
+- Approve quantities prior to submission
