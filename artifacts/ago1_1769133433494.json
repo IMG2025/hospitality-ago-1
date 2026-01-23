@@ -1,0 +1,469 @@
+{
+  "runId": "ago1_1769133433494",
+  "timestamp": "2026-01-23T01:57:13.494Z",
+  "inputs": [
+    "inputs/email_security.csv",
+    "inputs/inventory_levels.csv",
+    "inputs/inventory_variance.csv",
+    "inputs/maintenance.csv",
+    "inputs/pci_events.csv"
+  ],
+  "findings": [
+    {
+      "severity": "high",
+      "domain": "email_intrusion",
+      "summary": "Policy match: email_forwarding_rule_created",
+      "evidence": {
+        "event_type": "rule_created",
+        "detail": "forward rule created",
+        "actor": "user1",
+        "ip": "1.1.1.1",
+        "geo": "US",
+        "timestamp": "2026-01-23T01:00:00Z"
+      },
+      "recommendation": [
+        "Review mailbox forwarding and inbox rules immediately.",
+        "Force password reset for affected account(s).",
+        "Review OAuth grants and recent sign-in activity.",
+        "Preserve logs and artifacts for incident response."
+      ]
+    },
+    {
+      "severity": "high",
+      "domain": "email_intrusion",
+      "summary": "Policy match: email_forwarding_rule_created",
+      "evidence": {
+        "event_type": "rule_modified",
+        "detail": "forward rule modified",
+        "actor": "user1",
+        "ip": "1.1.1.1",
+        "geo": "US",
+        "timestamp": "2026-01-23T01:10:00Z"
+      },
+      "recommendation": [
+        "Review mailbox forwarding and inbox rules immediately.",
+        "Force password reset for affected account(s).",
+        "Review OAuth grants and recent sign-in activity.",
+        "Preserve logs and artifacts for incident response."
+      ]
+    },
+    {
+      "severity": "low",
+      "domain": "data_quality",
+      "summary": "Missing required fields for check maintenance_ticket_overdue (skipped evaluation)",
+      "data_quality": {
+        "missing_required_fields": [
+          "status",
+          "due_date"
+        ],
+        "input": "maintenance.csv",
+        "check_id": "maintenance_ticket_overdue"
+      }
+    },
+    {
+      "severity": "high",
+      "domain": "email_intrusion",
+      "summary": "Repeated email security events for actor 'user1' within 15 minutes",
+      "recommendation": [
+        "Review mailbox forwarding and inbox rules immediately.",
+        "Force password reset for affected account(s).",
+        "Review OAuth grants and recent sign-in activity.",
+        "Preserve logs and artifacts for incident response."
+      ]
+    },
+    {
+      "severity": "medium",
+      "domain": "loss_prevention",
+      "summary": "Inventory variance spike detected (>= $250)",
+      "evidence": {
+        "business_date": "2026-01-20",
+        "location_id": "LOC1",
+        "sku": "VODKA750",
+        "variance_value": "300",
+        "variance_qty": "-3",
+        "notes": "variance spike"
+      },
+      "recommendation": [
+        "Review variance drivers (waste, spoilage, comps) for affected SKU/location/date.",
+        "Spot-check receiving and storage controls for affected SKU(s)."
+      ]
+    },
+    {
+      "severity": "medium",
+      "domain": "loss_prevention",
+      "summary": "Inventory variance spike detected (>= $250)",
+      "evidence": {
+        "business_date": "2026-01-22",
+        "location_id": "LOC1",
+        "sku": "VODKA750",
+        "variance_value": "420",
+        "variance_qty": "-4",
+        "notes": "repeat spike"
+      },
+      "recommendation": [
+        "Review variance drivers (waste, spoilage, comps) for affected SKU/location/date.",
+        "Spot-check receiving and storage controls for affected SKU(s)."
+      ]
+    },
+    {
+      "severity": "medium",
+      "domain": "loss_prevention",
+      "summary": "Inventory variance spike detected (>= $250)",
+      "evidence": {
+        "business_date": "2026-01-23",
+        "location_id": "LOC2",
+        "sku": "BEEF5LB",
+        "variance_value": "260",
+        "variance_qty": "-5",
+        "notes": "spike"
+      },
+      "recommendation": [
+        "Review variance drivers (waste, spoilage, comps) for affected SKU/location/date.",
+        "Spot-check receiving and storage controls for affected SKU(s)."
+      ]
+    },
+    {
+      "severity": "high",
+      "domain": "loss_prevention",
+      "summary": "Repeat variance pattern: 2 spikes in last 7 days (location=LOC1, sku=VODKA750)",
+      "evidence": {
+        "location_id": "LOC1",
+        "sku": "VODKA750",
+        "spike_count": "2",
+        "total_variance_value": "720"
+      },
+      "recommendation": [
+        "Validate inventory counts and receiving records for affected SKU/location/date.",
+        "Review waste/comp/void logs for the same period (no individual attribution).",
+        "Confirm vendor deliveries and invoice quantities; check for unit-of-measure mismatches.",
+        "Increase cycle counts for affected SKU(s) for the next 7 days."
+      ]
+    },
+    {
+      "severity": "low",
+      "domain": "loss_prevention",
+      "summary": "Hotspot SKUs by total variance value (top 5)",
+      "evidence": {
+        "sku_1": "VODKA750 ($720)",
+        "sku_2": "BEEF5LB ($380)",
+        "sku_3": "LIME ($90)"
+      },
+      "recommendation": [
+        "Monitor variance trends and confirm data coverage."
+      ]
+    },
+    {
+      "severity": "low",
+      "domain": "loss_prevention",
+      "summary": "Hotspot locations by total variance value (top 5)",
+      "evidence": {
+        "location_1": "LOC1 ($810)",
+        "location_2": "LOC2 ($380)"
+      },
+      "recommendation": [
+        "Monitor variance trends and confirm data coverage."
+      ]
+    },
+    {
+      "severity": "high",
+      "domain": "facility_maintenance",
+      "summary": "High-priority ticket is stale (> 3 days)",
+      "evidence": {
+        "ticket_id": "T1",
+        "location_id": "LOC1",
+        "asset_id": "ICE1",
+        "issue_type": "ice_machine_leak",
+        "priority": "high",
+        "opened_date": "2026-01-15T00:00:00.000Z",
+        "vendor": "VendorA",
+        "notes": "leak ongoing"
+      },
+      "recommendation": [
+        "Escalate to facilities leadership; validate vendor dispatch and parts availability.",
+        "If customer-impacting asset, implement temporary mitigation until repair completed.",
+        "Preserve ticket evidence and closure notes for recurring failure analysis."
+      ]
+    },
+    {
+      "severity": "high",
+      "domain": "facility_maintenance",
+      "summary": "High-priority ticket is stale (> 3 days)",
+      "evidence": {
+        "ticket_id": "T3",
+        "location_id": "LOC2",
+        "asset_id": "HVAC9",
+        "issue_type": "hvac_failure",
+        "priority": "urgent",
+        "opened_date": "2026-01-18T00:00:00.000Z",
+        "vendor": "VendorB",
+        "notes": "dining room hot"
+      },
+      "recommendation": [
+        "Escalate to facilities leadership; validate vendor dispatch and parts availability.",
+        "If customer-impacting asset, implement temporary mitigation until repair completed.",
+        "Preserve ticket evidence and closure notes for recurring failure analysis."
+      ]
+    },
+    {
+      "severity": "high",
+      "domain": "facility_maintenance",
+      "summary": "Repeat maintenance issue: 2 tickets in last 30 days (location=LOC1, asset=ICE1)",
+      "evidence": {
+        "location_id": "LOC1",
+        "asset_id": "ICE1",
+        "issue_type": "ice_machine_leak",
+        "ticket_count": "2"
+      },
+      "recommendation": [
+        "Escalate to facilities leadership; validate vendor dispatch and parts availability.",
+        "If customer-impacting asset, implement temporary mitigation until repair completed.",
+        "Preserve ticket evidence and closure notes for recurring failure analysis."
+      ]
+    },
+    {
+      "severity": "high",
+      "domain": "facility_maintenance",
+      "summary": "Repeat maintenance issue: 2 tickets in last 30 days (location=LOC2, asset=HVAC9)",
+      "evidence": {
+        "location_id": "LOC2",
+        "asset_id": "HVAC9",
+        "issue_type": "hvac_failure",
+        "ticket_count": "2"
+      },
+      "recommendation": [
+        "Escalate to facilities leadership; validate vendor dispatch and parts availability.",
+        "If customer-impacting asset, implement temporary mitigation until repair completed.",
+        "Preserve ticket evidence and closure notes for recurring failure analysis."
+      ]
+    },
+    {
+      "severity": "low",
+      "domain": "facility_maintenance",
+      "summary": "Vendor lag (avg days-to-close) hotspots (top 5)",
+      "evidence": {
+        "vendor_1": "VendorC (avg=24.0d, n=1)",
+        "vendor_2": "VendorB (avg=10.0d, n=1)",
+        "vendor_3": "VendorA (avg=5.0d, n=1)"
+      },
+      "recommendation": [
+        "Monitor ticket aging trends and confirm data coverage."
+      ]
+    },
+    {
+      "severity": "high",
+      "domain": "inventory_reorder",
+      "summary": "Critical stock risk (on_hand=0 <= 1.20 of par=12)",
+      "evidence": {
+        "business_date": "2026-01-23",
+        "location_id": "LOC1",
+        "sku": "VODKA750",
+        "on_hand_qty": "0",
+        "par_level_qty": "12",
+        "vendor": "VendorLiquor",
+        "suggested_reorder_qty": "12",
+        "unit_cost": "18.5",
+        "notes": "stockout risk"
+      },
+      "recommendation": [
+        "Initiate same-day replenishment review for critical items.",
+        "Confirm open POs, vendor lead times, and receiving schedule.",
+        "Validate par levels and unit-of-measure accuracy for the SKU."
+      ]
+    },
+    {
+      "severity": "high",
+      "domain": "inventory_reorder",
+      "summary": "Critical stock risk (on_hand=1 <= 1.00 of par=10)",
+      "evidence": {
+        "business_date": "2026-01-23",
+        "location_id": "LOC2",
+        "sku": "BEEF5LB",
+        "on_hand_qty": "1",
+        "par_level_qty": "10",
+        "vendor": "VendorMeat",
+        "suggested_reorder_qty": "9",
+        "unit_cost": "42",
+        "notes": "critical"
+      },
+      "recommendation": [
+        "Initiate same-day replenishment review for critical items.",
+        "Confirm open POs, vendor lead times, and receiving schedule.",
+        "Validate par levels and unit-of-measure accuracy for the SKU."
+      ]
+    },
+    {
+      "severity": "medium",
+      "domain": "inventory_reorder",
+      "summary": "Low stock detected (on_hand=3 <= 10.00 of par=20)",
+      "evidence": {
+        "business_date": "2026-01-23",
+        "location_id": "LOC1",
+        "sku": "LIME",
+        "on_hand_qty": "3",
+        "par_level_qty": "20",
+        "vendor": "VendorProduce",
+        "suggested_reorder_qty": "17",
+        "unit_cost": "0.35",
+        "notes": "low"
+      },
+      "recommendation": [
+        "Review reorder candidates and confirm demand forecast.",
+        "Validate par level settings and recent usage trends."
+      ]
+    },
+    {
+      "severity": "medium",
+      "domain": "inventory_reorder",
+      "summary": "Low stock detected (on_hand=40 <= 50.00 of par=100)",
+      "evidence": {
+        "business_date": "2026-01-23",
+        "location_id": "LOC2",
+        "sku": "NAPKINS",
+        "on_hand_qty": "40",
+        "par_level_qty": "100",
+        "vendor": "VendorPaper",
+        "suggested_reorder_qty": "60",
+        "unit_cost": "0.02",
+        "notes": "low"
+      },
+      "recommendation": [
+        "Review reorder candidates and confirm demand forecast.",
+        "Validate par level settings and recent usage trends."
+      ]
+    },
+    {
+      "severity": "low",
+      "domain": "inventory_reorder",
+      "summary": "Reorder-risk hotspot SKUs (top 5)",
+      "evidence": {
+        "sku_1": "VODKA750 (flags=1)",
+        "sku_2": "BEEF5LB (flags=1)",
+        "sku_3": "LIME (flags=1)",
+        "sku_4": "NAPKINS (flags=1)"
+      },
+      "recommendation": [
+        "Monitor inventory levels and confirm data coverage."
+      ]
+    },
+    {
+      "severity": "low",
+      "domain": "inventory_reorder",
+      "summary": "Reorder-risk hotspot locations (top 5)",
+      "evidence": {
+        "location_1": "LOC1 (flags=2)",
+        "location_2": "LOC2 (flags=2)"
+      },
+      "recommendation": [
+        "Monitor inventory levels and confirm data coverage."
+      ]
+    }
+  ],
+  "risk": {
+    "score": 100,
+    "level": "critical",
+    "weights": {
+      "high": 20,
+      "medium": 8,
+      "low": 2
+    },
+    "counts": {
+      "high": 10,
+      "medium": 5,
+      "low": 6
+    },
+    "top_domains": [
+      {
+        "domain": "loss_prevention",
+        "count": 6,
+        "maxSeverity": "high"
+      },
+      {
+        "domain": "inventory_reorder",
+        "count": 6,
+        "maxSeverity": "high"
+      },
+      {
+        "domain": "facility_maintenance",
+        "count": 5,
+        "maxSeverity": "high"
+      },
+      {
+        "domain": "email_intrusion",
+        "count": 3,
+        "maxSeverity": "high"
+      }
+    ]
+  },
+  "drafts": {
+    "purchase_orders": [
+      {
+        "vendor": "VendorLiquor",
+        "location_id": "LOC1",
+        "business_date": "2026-01-23",
+        "lines": [
+          {
+            "sku": "VODKA750",
+            "suggested_qty": 12,
+            "on_hand_qty": 0,
+            "par_level_qty": 12,
+            "unit_cost": 18.5,
+            "est_line_cost": 222
+          }
+        ],
+        "notice_text": "DRAFT PURCHASE ORDER NOTICE (NOT SENT)\nVendor: VendorLiquor\nLocation: LOC1\nBusiness Date: 2026-01-23\n\nReplenishment candidates:\n- SKU VODKA750: suggested_qty=12 (on_hand=0, par=12, unit_cost=$18.5, est=$222)\n\nEstimated total cost: $222\n\nOperator review required:\n- Confirm open POs and lead times\n- Validate unit-of-measure and par settings\n- Approve quantities prior to submission\n",
+        "est_total_cost": 222
+      },
+      {
+        "vendor": "VendorMeat",
+        "location_id": "LOC2",
+        "business_date": "2026-01-23",
+        "lines": [
+          {
+            "sku": "BEEF5LB",
+            "suggested_qty": 9,
+            "on_hand_qty": 1,
+            "par_level_qty": 10,
+            "unit_cost": 42,
+            "est_line_cost": 378
+          }
+        ],
+        "notice_text": "DRAFT PURCHASE ORDER NOTICE (NOT SENT)\nVendor: VendorMeat\nLocation: LOC2\nBusiness Date: 2026-01-23\n\nReplenishment candidates:\n- SKU BEEF5LB: suggested_qty=9 (on_hand=1, par=10, unit_cost=$42, est=$378)\n\nEstimated total cost: $378\n\nOperator review required:\n- Confirm open POs and lead times\n- Validate unit-of-measure and par settings\n- Approve quantities prior to submission\n",
+        "est_total_cost": 378
+      },
+      {
+        "vendor": "VendorProduce",
+        "location_id": "LOC1",
+        "business_date": "2026-01-23",
+        "lines": [
+          {
+            "sku": "LIME",
+            "suggested_qty": 17,
+            "on_hand_qty": 3,
+            "par_level_qty": 20,
+            "unit_cost": 0.35,
+            "est_line_cost": 5.95
+          }
+        ],
+        "notice_text": "DRAFT PURCHASE ORDER NOTICE (NOT SENT)\nVendor: VendorProduce\nLocation: LOC1\nBusiness Date: 2026-01-23\n\nReplenishment candidates:\n- SKU LIME: suggested_qty=17 (on_hand=3, par=20, unit_cost=$0.35, est=$5.95)\n\nEstimated total cost: $5.95\n\nOperator review required:\n- Confirm open POs and lead times\n- Validate unit-of-measure and par settings\n- Approve quantities prior to submission\n",
+        "est_total_cost": 5.95
+      },
+      {
+        "vendor": "VendorPaper",
+        "location_id": "LOC2",
+        "business_date": "2026-01-23",
+        "lines": [
+          {
+            "sku": "NAPKINS",
+            "suggested_qty": 60,
+            "on_hand_qty": 40,
+            "par_level_qty": 100,
+            "unit_cost": 0.02,
+            "est_line_cost": 1.2
+          }
+        ],
+        "notice_text": "DRAFT PURCHASE ORDER NOTICE (NOT SENT)\nVendor: VendorPaper\nLocation: LOC2\nBusiness Date: 2026-01-23\n\nReplenishment candidates:\n- SKU NAPKINS: suggested_qty=60 (on_hand=40, par=100, unit_cost=$0.02, est=$1.2)\n\nEstimated total cost: $1.2\n\nOperator review required:\n- Confirm open POs and lead times\n- Validate unit-of-measure and par settings\n- Approve quantities prior to submission\n",
+        "est_total_cost": 1.2
+      }
+    ]
+  }
+}

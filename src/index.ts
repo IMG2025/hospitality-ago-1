@@ -204,7 +204,49 @@ function maxSeverity(a: Severity, b: Severity): Severity {
 
 // --- Risk scoring ---
 function computeRisk(findings: Finding[]): RiskSummary {
-  const weights: Record<Severity, number> = { high: 30, medium: 12, low: 3 };
+  // Normalized scoring: per-domain caps + diminishing returns + evidence weighting
+  const defaultCaps: Record<string, number> = {
+    email_intrusion: 35,
+    loss_prevention: 30,
+    facility_maintenance: 25,
+    inventory_reorder: 25,
+    pci_compliance: 35,
+    ingestion: 20
+  };
+
+  const severityWeights: Record<Severity, number> = { high: 20, medium: 8, low: 2 };
+  let domainDecay = 0.65;
+  let evMin = 0.85;
+  let evMax = 1.15;
+
+  // best-effort parse of policies/risk_scoring.yaml (simple key:value)
+  if (existsSync("policies/risk_scoring.yaml")) {
+    const raw = readText("policies/risk_scoring.yaml").split(/\r?\n/);
+    let inCaps = false, inWeights = false, inEv = false;
+    for (const line of raw) {
+      const t = line.trim();
+      if (!t || t.startsWith("#")) continue;
+
+      if (t.startsWith("domain_caps:")) { inCaps = true; inWeights = false; inEv = false; continue; }
+      if (t.startsWith("severity_weights:")) { inCaps = false; inWeights = true; inEv = false; continue; }
+      if (t.startsWith("evidence_multiplier:")) { inCaps = false; inWeights = false; inEv = true; continue; }
+      if (t.startsWith("domain_decay:")) { domainDecay = Number(t.split(":")[1].trim()) || domainDecay; continue; }
+
+      if (inCaps && t.includes(":")) {
+        const [k, v] = t.split(":").map(x => x.trim());
+        if (k && v) defaultCaps[k] = Number(v) || defaultCaps[k];
+      }
+      if (inWeights && t.includes(":")) {
+        const [k, v] = t.split(":").map(x => x.trim());
+        if (k === "high" || k === "medium" || k === "low") severityWeights[k] = Number(v) || severityWeights[k];
+      }
+      if (inEv && t.includes(":")) {
+        const [k, v] = t.split(":").map(x => x.trim());
+        if (k === "min") evMin = Number(v) || evMin;
+        if (k === "max") evMax = Number(v) || evMax;
+      }
+    }
+  }
 
   let high = 0, medium = 0, low = 0;
   for (const f of findings) {
@@ -214,30 +256,62 @@ function computeRisk(findings: Finding[]): RiskSummary {
     else low++;
   }
 
-  const raw = high * weights.high + medium * weights.medium + low * weights.low;
-  const score = Math.max(0, Math.min(100, Math.round(100 * (1 - Math.exp(-raw / 60)))));
-
-  let level: RiskSummary["level"] = "low";
-  if (score >= 80) level = "critical";
-  else if (score >= 55) level = "high";
-  else if (score >= 25) level = "moderate";
-
-  const domainMap = new Map<string, { count: number; max: Severity }>();
+  // Score by domain with decay + evidence multiplier, then cap domain points
+  const byDomain = new Map<string, Finding[]>();
   for (const f of findings) {
     if (f.domain === "data_quality") continue;
-    const cur = domainMap.get(f.domain) ?? { count: 0, max: "low" as Severity };
-    cur.count += 1;
-    cur.max = maxSeverity(cur.max, f.severity);
-    domainMap.set(f.domain, cur);
+    const arr = byDomain.get(f.domain) ?? [];
+    arr.push(f);
+    byDomain.set(f.domain, arr);
   }
 
-  const top_domains = [...domainMap.entries()]
-    .map(([domain, v]) => ({ domain, count: v.count, maxSeverity: v.max }))
+  const domainPoints = new Map<string, number>();
+  for (const [domain, arr] of byDomain.entries()) {
+    const rank: Record<Severity, number> = { high: 3, medium: 2, low: 1 };
+    arr.sort((a, b) => rank[b.severity] - rank[a.severity]);
+
+    let pts = 0;
+    for (let i = 0; i < arr.length; i++) {
+      const f = arr[i];
+      const base = severityWeights[f.severity];
+
+      const evCount = f.evidence ? Object.keys(f.evidence).length : 0;
+      const evMult = Math.max(evMin, Math.min(evMax, 0.85 + Math.min(10, evCount) * 0.03));
+
+      const decay = Math.pow(domainDecay, i);
+      pts += base * evMult * decay;
+    }
+
+    const cap = defaultCaps[domain] ?? 20;
+    domainPoints.set(domain, Math.min(cap, pts));
+  }
+
+  const presentDomains = [...domainPoints.keys()];
+  const totalCap = presentDomains.reduce((s, d) => s + (defaultCaps[d] ?? 20), 0) || 1;
+  const raw = [...domainPoints.values()].reduce((s, v) => s + v, 0);
+
+  const score = Math.max(0, Math.min(100, Math.round((raw / totalCap) * 100)));
+
+  let level: RiskSummary["level"] = "low";
+  if (score >= 85) level = "critical";
+  else if (score >= 60) level = "high";
+  else if (score >= 30) level = "moderate";
+
+  const top_domains = presentDomains
+    .map(domain => {
+      const count = (byDomain.get(domain) ?? []).length;
+      const maxSeverity = (byDomain.get(domain) ?? []).reduce((m, f) => {
+        const r: Record<Severity, number> = { low: 1, medium: 2, high: 3 };
+        return r[f.severity] > r[m] ? f.severity : m;
+      }, "low" as Severity);
+      return { domain, count, maxSeverity };
+    })
     .sort((a, b) => b.count - a.count)
     .slice(0, 5);
 
-  return { score, level, weights, counts: { high, medium, low }, top_domains };
+  return { score, level, weights: severityWeights, counts: { high, medium, low }, top_domains };
 }
+
 
 // --- Recommendations ---
 function emailRecommendations(sev: Severity): string[] {
