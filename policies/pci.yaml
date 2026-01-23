@@ -1,0 +1,21 @@
+pci:
+  name: "PCI Operational Risk Sentinel"
+  mode: "file-first"
+  boundaries:
+    - no cardholder_data
+    - artifacts_only
+  windows:
+    repeated_minutes: 60
+  severities:
+    high:
+      - pos_admin_login_off_hours
+      - remote_access_enabled
+      - firewall_rule_changed
+      - repeated_admin_failures
+    medium:
+      - antivirus_disabled
+      - patch_failed
+      - log_retention_gap
+    low:
+      - user_role_changed
+      - single_admin_login
