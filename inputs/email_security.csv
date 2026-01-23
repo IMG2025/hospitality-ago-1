@@ -1,2 +1,1 @@
-event,detail
-rule,forward rule created to external address
+timestamp,event_type,actor,ip,geo,detail
