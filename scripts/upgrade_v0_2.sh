@@ -1,3 +1,42 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+mkdir -p src/policies src/ingest artifacts logs
+
+# Policy checks config (simple, deterministic)
+cat > policies/checks.yaml <<'YAML'
+checks:
+  - id: email_forwarding_rule_created
+    domain: email_intrusion
+    severity: high
+    match:
+      file: email_security.csv
+      contains: ["forward", "rule", "created"]
+
+  - id: pci_admin_access_change
+    domain: pci
+    severity: high
+    match:
+      file: pci_events.csv
+      contains: ["admin", "access", "changed"]
+
+  - id: inventory_variance_spike
+    domain: loss_prevention
+    severity: medium
+    match:
+      file: inventory_variance.csv
+      contains: ["variance", "spike"]
+
+  - id: maintenance_ticket_overdue
+    domain: maintenance
+    severity: medium
+    match:
+      file: maintenance.csv
+      contains: ["overdue"]
+YAML
+
+# Replace src/index.ts with v0.2 logic (still minimal, file-first)
+cat > src/index.ts <<'TS'
 import { existsSync, mkdirSync, readFileSync, writeFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
@@ -105,3 +144,6 @@ function main() {
 }
 
 main();
+TS
+
+npm run build

@@ -1,0 +1,15 @@
+{
+  "runId": "ago1_1769130095004",
+  "timestamp": "2026-01-23T01:01:35.004Z",
+  "inputs": [
+    "inputs/email_security.csv"
+  ],
+  "findings": [
+    {
+      "severity": "high",
+      "domain": "email_intrusion",
+      "summary": "Policy match: email_forwarding_rule_created",
+      "evidence": "inputs/email_security.csv contains forward, rule, created"
+    }
+  ]
+}

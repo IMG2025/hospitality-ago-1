@@ -1,0 +1,28 @@
+checks:
+  - id: email_forwarding_rule_created
+    domain: email_intrusion
+    severity: high
+    match:
+      file: email_security.csv
+      contains: ["forward", "rule", "created"]
+
+  - id: pci_admin_access_change
+    domain: pci
+    severity: high
+    match:
+      file: pci_events.csv
+      contains: ["admin", "access", "changed"]
+
+  - id: inventory_variance_spike
+    domain: loss_prevention
+    severity: medium
+    match:
+      file: inventory_variance.csv
+      contains: ["variance", "spike"]
+
+  - id: maintenance_ticket_overdue
+    domain: maintenance
+    severity: medium
+    match:
+      file: maintenance.csv
+      contains: ["overdue"]
