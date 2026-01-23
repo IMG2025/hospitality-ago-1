@@ -2,27 +2,47 @@ checks:
   - id: email_forwarding_rule_created
     domain: email_intrusion
     severity: high
-    match:
-      file: email_security.csv
-      contains: ["forward", "rule", "created"]
+    input: email_security.csv
+    required_fields: [event_type, detail]
+    optional_fields: [timestamp, actor, ip, geo]
+    rule:
+      type: contains_any
+      field: event_type
+      values: [rule_created, rule_modified]
+    evidence_fields: [event_type, detail, actor, ip, geo, timestamp]
+
+  - id: email_suspicious_login_failures
+    domain: email_intrusion
+    severity: medium
+    input: email_security.csv
+    required_fields: [event_type]
+    optional_fields: [timestamp, actor, ip, geo, detail]
+    rule:
+      type: equals
+      field: event_type
+      value: login_failure
+    evidence_fields: [event_type, actor, ip, geo, timestamp]
 
   - id: pci_admin_access_change
     domain: pci
     severity: high
-    match:
-      file: pci_events.csv
-      contains: ["admin", "access", "changed"]
-
-  - id: inventory_variance_spike
-    domain: loss_prevention
-    severity: medium
-    match:
-      file: inventory_variance.csv
-      contains: ["variance", "spike"]
+    input: pci_events.csv
+    required_fields: [event_type, detail]
+    optional_fields: [timestamp, system, actor, asset_id]
+    rule:
+      type: contains_any
+      field: event_type
+      values: [admin_access_changed, config_changed]
+    evidence_fields: [event_type, system, actor, asset_id, timestamp, detail]
 
   - id: maintenance_ticket_overdue
     domain: maintenance
     severity: medium
-    match:
-      file: maintenance.csv
-      contains: ["overdue"]
+    input: maintenance.csv
+    required_fields: [status, due_date]
+    optional_fields: [opened_date, location_id, asset, issue, priority, last_update]
+    rule:
+      type: equals
+      field: status
+      value: open
+    evidence_fields: [status, due_date, asset, issue, location_id, priority, opened_date]

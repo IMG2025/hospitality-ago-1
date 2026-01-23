@@ -1,0 +1,24 @@
+{
+  "runId": "ago1_1769131443398",
+  "timestamp": "2026-01-23T01:24:03.398Z",
+  "inputs": [
+    "inputs/email_security.csv",
+    "inputs/inventory_variance.csv",
+    "inputs/maintenance.csv",
+    "inputs/pci_events.csv"
+  ],
+  "findings": [
+    {
+      "severity": "low",
+      "domain": "data_quality",
+      "summary": "Missing required fields for check email_forwarding_rule_created (skipped evaluation)",
+      "data_quality": {
+        "missing_required_fields": [
+          "detail"
+        ],
+        "input": "email_security.csv",
+        "check_id": "email_forwarding_rule_created"
+      }
+    }
+  ]
+}

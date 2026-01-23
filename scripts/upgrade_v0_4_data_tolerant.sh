@@ -1,3 +1,109 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+mkdir -p src artifacts logs policies inputs docs
+
+# --- Update policies/checks.yaml to include required/optional fields + rules ---
+cat > policies/checks.yaml <<'YAML'
+checks:
+  - id: email_forwarding_rule_created
+    domain: email_intrusion
+    severity: high
+    input: email_security.csv
+    required_fields: [event_type, detail]
+    optional_fields: [timestamp, actor, ip, geo]
+    rule:
+      type: contains_any
+      field: event_type
+      values: [rule_created, rule_modified]
+    evidence_fields: [event_type, detail, actor, ip, geo, timestamp]
+
+  - id: email_suspicious_login_failures
+    domain: email_intrusion
+    severity: medium
+    input: email_security.csv
+    required_fields: [event_type]
+    optional_fields: [timestamp, actor, ip, geo, detail]
+    rule:
+      type: equals
+      field: event_type
+      value: login_failure
+    evidence_fields: [event_type, actor, ip, geo, timestamp]
+
+  - id: pci_admin_access_change
+    domain: pci
+    severity: high
+    input: pci_events.csv
+    required_fields: [event_type, detail]
+    optional_fields: [timestamp, system, actor, asset_id]
+    rule:
+      type: contains_any
+      field: event_type
+      values: [admin_access_changed, config_changed]
+    evidence_fields: [event_type, system, actor, asset_id, timestamp, detail]
+
+  - id: maintenance_ticket_overdue
+    domain: maintenance
+    severity: medium
+    input: maintenance.csv
+    required_fields: [status, due_date]
+    optional_fields: [opened_date, location_id, asset, issue, priority, last_update]
+    rule:
+      type: equals
+      field: status
+      value: open
+    evidence_fields: [status, due_date, asset, issue, location_id, priority, opened_date]
+YAML
+
+# --- Update input contracts doc to explicitly allow missing fields ---
+cat > docs/input_contracts.md <<'EOF'
+# AGO-1 Input Contracts (v0.4)
+
+These are *canonical targets*. Real exports may omit fields. AGO-1 will:
+- operate with partial data
+- produce `data_quality` findings for missing required fields per check
+- never crash on missing columns
+
+## email_security.csv (canonical)
+- timestamp (ISO8601) [optional]
+- event_type [required by some checks]
+- actor (user/email) [optional]
+- ip [optional]
+- geo [optional]
+- detail [optional/required depending on check]
+
+## pci_events.csv (canonical)
+- timestamp (ISO8601) [optional]
+- system [optional]
+- event_type [required by some checks]
+- actor [optional]
+- asset_id [optional]
+- detail [optional/required depending on check]
+
+## maintenance.csv (canonical)
+- opened_date (YYYY-MM-DD) [optional]
+- location_id [optional]
+- asset [optional]
+- issue [optional]
+- priority (low|medium|high) [optional]
+- status (open|in_progress|closed) [required by some checks]
+- due_date (YYYY-MM-DD) [required by some checks]
+- last_update (ISO8601) [optional]
+EOF
+
+# --- Templates (headers only) ---
+cat > inputs/email_security.csv <<'EOF'
+timestamp,event_type,actor,ip,geo,detail
+EOF
+cat > inputs/pci_events.csv <<'EOF'
+timestamp,system,event_type,actor,asset_id,detail
+EOF
+cat > inputs/maintenance.csv <<'EOF'
+opened_date,location_id,asset,issue,priority,status,due_date,last_update
+EOF
+
+# --- Replace src/index.ts with data-tolerant ingestion + checks ---
+cat > src/index.ts <<'TS'
 import { existsSync, mkdirSync, readFileSync, writeFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
@@ -222,3 +328,6 @@ function main() {
 }
 
 main();
+TS
+
+npm run build

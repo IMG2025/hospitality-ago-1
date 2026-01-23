@@ -1,1 +1,2 @@
-timestamp,event_type,actor,ip,geo,detail
+event_type,actor
+rule_created,user1

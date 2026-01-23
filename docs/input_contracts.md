@@ -1,41 +1,32 @@
-# AGO-1 Input Contracts (v0.3)
+# AGO-1 Input Contracts (v0.4)
 
-## email_security.csv
-Required columns:
-- timestamp (ISO8601)
-- event_type (e.g., login_success, login_failure, rule_created, rule_modified)
-- actor (user/email)
-- ip (source ip)
-- geo (free text)
-- detail (free text)
+These are *canonical targets*. Real exports may omit fields. AGO-1 will:
+- operate with partial data
+- produce `data_quality` findings for missing required fields per check
+- never crash on missing columns
 
-## pci_events.csv
-Required columns:
-- timestamp (ISO8601)
-- system (e.g., pos, network, endpoint)
-- event_type (e.g., admin_access_changed, device_added, config_changed)
-- actor
-- asset_id
-- detail
+## email_security.csv (canonical)
+- timestamp (ISO8601) [optional]
+- event_type [required by some checks]
+- actor (user/email) [optional]
+- ip [optional]
+- geo [optional]
+- detail [optional/required depending on check]
 
-## inventory_variance.csv
-Required columns:
-- business_date (YYYY-MM-DD)
-- location_id
-- sku
-- expected_qty
-- actual_qty
-- variance_qty
-- variance_value
-- notes
+## pci_events.csv (canonical)
+- timestamp (ISO8601) [optional]
+- system [optional]
+- event_type [required by some checks]
+- actor [optional]
+- asset_id [optional]
+- detail [optional/required depending on check]
 
-## maintenance.csv
-Required columns:
-- opened_date (YYYY-MM-DD)
-- location_id
-- asset
-- issue
-- priority (low|medium|high)
-- status (open|in_progress|closed)
-- due_date (YYYY-MM-DD)
-- last_update (ISO8601)
+## maintenance.csv (canonical)
+- opened_date (YYYY-MM-DD) [optional]
+- location_id [optional]
+- asset [optional]
+- issue [optional]
+- priority (low|medium|high) [optional]
+- status (open|in_progress|closed) [required by some checks]
+- due_date (YYYY-MM-DD) [required by some checks]
+- last_update (ISO8601) [optional]
