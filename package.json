@@ -1,5 +1,5 @@
 {
-  "name": "coreidentity-ago-1",
+  "name": "hospitality-ago-1",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -10,5 +10,9 @@
   "devDependencies": {
     "@types/node": "^25.0.10",
     "typescript": "^5.7.3"
-  }
+  },
+  "dependencies": {
+    "ago-1-core": "file:../work/ago-1-core/ago-1-core-0.1.0.tgz"
+  },
+  "description": "AGO-1 Hospitality Domain Executor"
 }
