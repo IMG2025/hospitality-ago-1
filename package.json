@@ -13,7 +13,7 @@
     "typescript": "^5.7.3"
   },
   "dependencies": {
-    "ago-1-core": "file:../work/ago-1-core/ago-1-core-0.1.0.tgz"
+    "ago-1-core": "github:IMG2025/ago-1-core#master"
   },
   "description": "AGO-1 Hospitality Domain Executor",
   "main": "dist/index.js",
