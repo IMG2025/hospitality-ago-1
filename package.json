@@ -14,5 +14,13 @@
   "dependencies": {
     "ago-1-core": "file:../work/ago-1-core/ago-1-core-0.1.0.tgz"
   },
-  "description": "AGO-1 Hospitality Domain Executor"
+  "description": "AGO-1 Hospitality Domain Executor",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  }
 }
